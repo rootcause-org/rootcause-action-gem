@@ -13,7 +13,7 @@ ever travels on the wire.
 
 **The authoritative design for this gem is [SPEC.md](SPEC.md). Read it before changing behavior.**
 The whole-plane design lives in
-[`rootcause-light/docs/action-plane-spec.md`](https://github.com/rootcause-org/rootcause-light/blob/main/docs/action-plane-spec.md)
+[`rootcause/docs/action-plane-spec.md`](https://github.com/rootcause-org/rootcause/blob/main/docs/action-plane-spec.md)
 — read that first for the host side (registry, signer, confirm/execute pages, audit).
 
 ## Stage
@@ -41,7 +41,7 @@ execute inline with a hard timeout, params bound **as data** → return signed s
 - **No sending email** — the human-reviewed draft is rootcause's concern.
 - **No non-Ruby runners, no large-output/download URLs, no dry-run** in v1 (the contract is ready).
 
-## Taxonomy (shared verbatim with rootcause-light / ReplyPen)
+## Taxonomy (shared verbatim with rootcause / ReplyPen)
 
 One word per concept. Use the **bold** term in code, comments, docs, commits, tests; aliases banned.
 

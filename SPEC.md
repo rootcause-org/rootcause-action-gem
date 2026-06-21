@@ -12,9 +12,9 @@ results**. No executable code ever travels in the invocation; the gem only runs 
 `sha256` equals the approved `script_digest`.
 
 > **This repo is the gem only.** The host (registry, signer, confirm/execute pages, audit) lives in
-> [`rootcause-light`](https://github.com/rootcause-org/rootcause-light). The authoritative design for
+> [`rootcause`](https://github.com/rootcause-org/rootcause). The authoritative design for
 > the whole plane is
-> [`docs/action-plane-spec.md`](https://github.com/rootcause-org/rootcause-light/blob/main/docs/action-plane-spec.md)
+> [`docs/action-plane-spec.md`](https://github.com/rootcause-org/rootcause/blob/main/docs/action-plane-spec.md)
 > in that repo — **read it first**; this SPEC narrows it to the runner's responsibilities and the
 > wire contract the gem must honor.
 

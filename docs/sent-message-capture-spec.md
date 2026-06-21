@@ -1,6 +1,6 @@
 # Sent-Message Capture Spec (gem side)
 
-**Status:** ready to build · **Repo:** `rootcause-embassy` (the gem) · **Consumer spec:** `kampadmin/docs/specs/rootcause-sent-message-capture.md` · **Host spec:** `rootcause-light/docs/specs/sent-message-capture.md` (§ "Gem-facing route"). Build in lockstep — one shared wire contract (§3).
+**Status:** ready to build · **Repo:** `rootcause-embassy` (the gem) · **Consumer spec:** `kampadmin/docs/specs/rootcause-sent-message-capture.md` · **Host spec:** `rootcause/docs/specs/sent-message-capture.md` (§ "Gem-facing route"). Build in lockstep — one shared wire contract (§3).
 
 ## 1. Intent
 
@@ -70,10 +70,10 @@ host already enforces for the analysis trigger). Body:
 
 ## 4. Host endpoint (what the gem targets — see host spec for the build)
 
-A new route on rootcause-light, sibling of the analysis trigger, verified with the project's
+A new route on rootcause, sibling of the analysis trigger, verified with the project's
 **reverse secret** (`projects.action_reverse_secret`) + replay guard, persisting into the shared
 `sent_messages` table (the table the ReplyPen path already defines). Detailed in
-`rootcause-light/docs/specs/sent-message-capture.md` → "Gem-facing route". The gem only needs the
+`rootcause/docs/specs/sent-message-capture.md` → "Gem-facing route". The gem only needs the
 URL configured; it does not care about persistence.
 
 ## 5. Tests (RSpec, reuse `spec/support/wire.rb`)

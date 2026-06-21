@@ -13,7 +13,7 @@ their own per-language repos (`rootcause-embassy-<lang>`).
 
 > The authoritative design is [SPEC.md](SPEC.md). The whole-plane design (host side: registry,
 > signer, confirm/execute pages, audit) lives in
-> [`rootcause-light/docs/action-plane-spec.md`](https://github.com/rootcause-org/rootcause-light/blob/main/docs/action-plane-spec.md).
+> [`rootcause/docs/action-plane-spec.md`](https://github.com/rootcause-org/rootcause/blob/main/docs/action-plane-spec.md).
 
 ## Install
 

@@ -4,7 +4,7 @@
 capability: the customer's app **triggers an analysis** on the rootcause host and later **receives the
 result** asynchronously into a Ruby handler. The host side (ingest endpoint, run lifecycle, result
 delivery) lives in
-[`rootcause-light/docs/async-analysis-host-spec.md`](https://github.com/rootcause-org/rootcause-light/blob/main/docs/async-analysis-host-spec.md)
+[`rootcause/docs/async-analysis-host-spec.md`](https://github.com/rootcause-org/rootcause/blob/main/docs/async-analysis-host-spec.md)
 — read it for everything off-gem.
 
 **Session continuation (host-managed).** rootcause keeps the conversation history server-side, keyed by
