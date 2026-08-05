@@ -181,6 +181,51 @@ RootCause::Embassy.start_analysis(
 `session_id` is **opaque** to the gem — store it and forward it, never interpret it. Omit it (or pass
 `nil`) on the first turn; the host mints one and returns it in the 202.
 
+## Embedded chat (mint a token, drop in the widget)
+
+Let a signed-in user chat with the rootcause agent from inside your app. Your backend mints a
+short-lived, single-use HS256 token; the browser never holds the key, so it cannot chat as another
+user, in another tenant, from another origin, or past the expiry.
+
+The chat key is the project's **`webhook_secret`** — a **different** secret from the action
+reverse-channel one, and neither falls back to the other. All three settings are optional: an Embassy
+without chat behaves exactly as before.
+
+```ruby
+# config/initializers/rootcause.rb — extends the block above
+RootCause::Embassy.configure do |c|
+  c.chat_secret   = ENV.fetch("ROOTCAUSE_CHAT_SECRET")   # the project's webhook_secret
+  c.chat_project  = ENV.fetch("ROOTCAUSE_CHAT_PROJECT")  # e.g. "kampadmin-support" (public)
+  c.chat_base_url = ENV.fetch("ROOTCAUSE_CHAT_BASE_URL") # e.g. "https://app.replypen.com"
+end
+```
+
+```erb
+<%# app/views/…, with `include RootCause::Embassy::ChatViewHelper` in a helper %>
+<%= chat_widget_tag(external_id: current_admin_user.id,
+                    kind:        "kampadmin_admin",
+                    tenant:      ActsAsTenant.current_tenant.slug,
+                    origin:      request.base_url,
+                    mode:        :page, target: "#rc-chat") %>
+```
+
+`external_id` must be an **opaque, stable** user id (never a name/email) — rootcause anchors
+conversation ownership to it. `tenant` is the rootcause tenant **slug**, required on tenant-enabled
+projects, and must come from your **server-side authorized** tenant context (never client input):
+every claim rides inside the signature, so a swapped tenant is simply an invalid token.
+
+Outside Rails (or to mint the token yourself, e.g. for a JSON endpoint that refreshes an expiring
+one):
+
+```ruby
+RootCause::Embassy.chat_token(external_id: admin.id, kind: "kampadmin_admin",
+  tenant: tenant.slug, origin: "https://admin.kampadmin.be", ttl: 900)
+# => "eyJhbGciOiJIUzI1NiIs…"  (claims: sub/aud/iss/jti/origin/tenant/iat/nbf/exp/principal — see SPEC.md §5b)
+```
+
+`RootCause::Embassy::Chat.widget_tag_html(...)` is the framework-agnostic core behind the view helper
+(same options, returns an escaped plain `String`).
+
 ## Multi-worker deployments
 
 The default nonce store is an in-process, TTL-pruned set — correct for a **single process**. Across

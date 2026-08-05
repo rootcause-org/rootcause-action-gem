@@ -169,6 +169,33 @@ names: params can select only an in-tenant target, never the tenant itself. A te
 deployment must set `require_tenant_context = true`, making an absent tuple a hard refusal before script
 resolution; flat deployments retain the default `false`.
 
+### 5b. Embedded-chat token (gem → browser → host)
+
+A **fourth**, one-directional message on a **different key**: the customer's backend mints a
+short-lived HS256 JWT that lets a signed-in user talk to rootcause's embedded chat. It is signed with
+the project's **`webhook_secret`** (`chat_secret`), **never** the reverse-channel `secret` — separate
+privilege boundaries, no fallback in either direction. The gem only **mints**; rootcause only
+**verifies** (`internal/chat/jwt.go`). Header is `{"alg":"HS256","typ":"JWT"}`; anything else is
+rejected host-side.
+
+```jsonc
+{
+  "sub": "<external_id>",                          // opaque, stable user id
+  "aud": "rootcause:chat:<chat_project>",          // exact, host-required
+  "iss": "<chat_project>",
+  "jti": "uuid",                                   // single-use: burned when a session opens
+  "origin": "https://admin.kampadmin.be",          // scheme://host[:port], re-checked vs the Origin header
+  "tenant": "heyo",                                // OMITTED when flat; required on tenant-enabled projects
+  "iat": 1785932045, "nbf": 1785932045, "exp": 1785932945,   // ttl 900s default, ±60s host leeway
+  "principal": { "kind": "kampadmin_admin", "external_id": "<external_id>",
+                 "asserted_by": "<chat_project>", "assurance": "customer_backend_jwt" }
+}
+```
+
+The `tenant` must come from the **server-side authorized** tenant context: every claim is inside the
+signature, so swapping tenant/user/origin/expiry invalidates the token, and nothing outside the
+signature is ever trusted.
+
 ## 6. The action body it runs (read-only context)
 
 The gem **never authors** actions; it only runs them. For reference, an action in rootcause's

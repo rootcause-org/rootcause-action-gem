@@ -58,6 +58,35 @@ module Wire
     )
   end
 
+  # --- embedded chat ---
+  # The chat key is the project's webhook_secret — deliberately NOT the reverse-channel SECRET above.
+  CHAT_SECRET = "test-project-webhook-secret"
+  CHAT_PROJECT = "kampadmin-support"
+  CHAT_BASE_URL = "https://chat.rootcause.test"
+  CHAT_ORIGIN = "https://admin.kampadmin.be"
+
+  # Verify + parse a compact JWS exactly as the rootcause host does: HMAC over the EXACT transmitted
+  # `header.payload` segments, then JSON. Raises when the signature does not verify.
+  def decode_jwt(token, secret: CHAT_SECRET)
+    header_b64, payload_b64, sig_b64 = token.split(".")
+    expected = RootCause::Embassy::Chat.b64(
+      OpenSSL::HMAC.digest("SHA256", secret, "#{header_b64}.#{payload_b64}")
+    )
+    raise "embed token signature does not verify" unless sig_b64 == expected
+
+    [JSON.parse(unb64(header_b64)), JSON.parse(unb64(payload_b64))]
+  end
+
+  def unb64(segment)
+    padded = segment.tr("-_", "+/")
+    padded += "=" * ((4 - (padded.length % 4)) % 4)
+    padded.unpack1("m")
+  end
+
+  def chat_config(**overrides)
+    config(chat_secret: CHAT_SECRET, chat_project: CHAT_PROJECT, chat_base_url: CHAT_BASE_URL, **overrides)
+  end
+
   def config(**overrides)
     cfg = RootCause::Embassy::Config.new
     cfg.secret = SECRET

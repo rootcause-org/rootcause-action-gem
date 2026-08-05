@@ -74,6 +74,23 @@ module RootCause
       # sending anything larger. Large files / fetch-URLs are out of scope (v1).
       attr_accessor :max_attachment_bytes
 
+      # --- embedded chat (see Chat) ---
+
+      # The project's `webhook_secret`, used ONLY to mint embed-chat tokens (ENV
+      # ROOTCAUSE_CHAT_SECRET). A deliberately separate privilege boundary from the
+      # action-plane `secret`: neither ever falls back to the other, so a leaked
+      # chat key cannot buy action execution. Optional — an Embassy without chat
+      # leaves all three chat attributes nil.
+      attr_accessor :chat_secret
+
+      # The rootcause project name the token is issued for, e.g. "kampadmin-support"
+      # (ENV ROOTCAUSE_CHAT_PROJECT). Public — it ships in the widget tag.
+      attr_accessor :chat_project
+
+      # Origin serving the hosted chat widget, e.g. "https://app.replypen.com"
+      # (ENV ROOTCAUSE_CHAT_BASE_URL). Needed only by the widget tag, not by minting.
+      attr_accessor :chat_base_url
+
       # The placeholder fetch_url shipped as the default when ROOTCAUSE_FETCH_URL
       # is unset. Reaching resolve with this URL fails opaquely; the boot guard
       # catches it eagerly when the reverse channel is active.
@@ -113,10 +130,34 @@ module RootCause
         unless [true, false].include?(require_tenant_context)
           raise ArgumentError, "RootCause::Embassy: require_tenant_context must be true or false"
         end
+        validate_chat!
         self
       end
 
+      # True once chat is wired far enough to mint a token.
+      def chat_configured? = !blank?(chat_secret) && !blank?(chat_project)
+
       private
+
+      # Chat is opt-in: an Embassy that sets none of the chat attributes validates exactly as before.
+      # Once ANY of them is set the deployment intends chat, so a half-wired one is a boot-time
+      # mistake, not a runtime surprise.
+      def validate_chat!
+        return if [chat_secret, chat_project, chat_base_url].all? { |v| blank?(v) }
+
+        raise ArgumentError, "RootCause::Embassy: chat_secret is required when chat is configured" if blank?(chat_secret)
+        raise ArgumentError, "RootCause::Embassy: chat_project is required when chat is configured" if blank?(chat_project)
+        # The two secrets are different privilege boundaries; the same value in both means one of the
+        # two ENV vars is pointed at the wrong secret.
+        if !blank?(secret) && chat_secret.to_s == secret.to_s
+          raise ArgumentError,
+            "RootCause::Embassy: chat_secret must differ from secret — ROOTCAUSE_CHAT_SECRET is the " \
+            "project's webhook_secret, not the action reverse-channel secret"
+        end
+        return if blank?(chat_base_url) || %r{\Ahttps?://\S+\z}.match?(chat_base_url.to_s)
+
+        raise ArgumentError, "RootCause::Embassy: chat_base_url must be an absolute http(s) URL"
+      end
 
       # The placeholder, by exact match OR by a host ending in `.invalid` (the
       # reserved TLD the placeholder uses). A malformed fetch_url can't slip past

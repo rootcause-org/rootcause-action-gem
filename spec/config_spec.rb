@@ -64,6 +64,56 @@ RSpec.describe RootCause::Embassy::Config do
     cfg.require_tenant_context = "yes"
     expect { cfg.validate! }.to raise_error(ArgumentError, /require_tenant_context/)
   end
+
+  describe "embedded chat (optional)" do
+    def base
+      described_class.new.tap { |c|
+        c.secret = "s"
+        c.fetch_url = "https://x"
+      }
+    end
+
+    it "stays inert when no chat attribute is set" do
+      cfg = base
+      expect { cfg.validate! }.not_to raise_error
+      expect(cfg.chat_configured?).to be(false)
+    end
+
+    it "refuses a half-wired chat deployment" do
+      cfg = base
+      cfg.chat_base_url = "https://chat.rootcause.test"
+      expect { cfg.validate! }.to raise_error(ArgumentError, /chat_secret/)
+
+      cfg.chat_secret = "webhook-secret"
+      expect { cfg.validate! }.to raise_error(ArgumentError, /chat_project/)
+
+      cfg.chat_project = "kampadmin-support"
+      expect { cfg.validate! }.not_to raise_error
+      expect(cfg.chat_configured?).to be(true)
+    end
+
+    it "refuses the action reverse-channel secret reused as the chat secret" do
+      cfg = base
+      cfg.chat_secret = "s"
+      cfg.chat_project = "kampadmin-support"
+      expect { cfg.validate! }.to raise_error(ArgumentError, /ROOTCAUSE_CHAT_SECRET/)
+    end
+
+    it "rejects a chat_base_url that is not an absolute http(s) URL" do
+      cfg = base
+      cfg.chat_secret = "webhook-secret"
+      cfg.chat_project = "kampadmin-support"
+      cfg.chat_base_url = "chat.rootcause.test"
+      expect { cfg.validate! }.to raise_error(ArgumentError, /chat_base_url/)
+    end
+
+    it "mints without chat_base_url — the URL is only the widget tag's concern" do
+      cfg = base
+      cfg.chat_secret = "webhook-secret"
+      cfg.chat_project = "kampadmin-support"
+      expect { cfg.validate! }.not_to raise_error
+    end
+  end
 end
 
 RSpec.describe RootCause::Embassy do

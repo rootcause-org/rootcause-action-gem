@@ -15,6 +15,8 @@ require_relative "embassy/result"
 require_relative "embassy/result_handler"
 require_relative "embassy/client"
 require_relative "embassy/result_rack"
+require_relative "embassy/chat"
+require_relative "embassy/chat_view_helper"
 
 module RootCause
   # The Embassy — rootcause's trusted in-app presence in the customer's runtime.
@@ -70,6 +72,12 @@ module RootCause
       # Client#capture_sent_message.
       def capture_sent_message(...)
         client.capture_sent_message(...)
+      end
+
+      # Mint a short-lived HS256 embed-chat token for one user (+ tenant). See Chat#token — the
+      # browser never holds the key, so it cannot mint for another user, tenant, origin, or expiry.
+      def chat_token(...)
+        Chat.token(...)
       end
 
       # Test/boot-order seam: drop the configured singletons.
