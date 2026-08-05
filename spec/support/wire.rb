@@ -6,6 +6,10 @@ require "digest"
 # script-by-digest endpoint exactly as the gem expects to verify it.
 module Wire
   SECRET = "test-reverse-channel-secret"
+  PROJECT_ID = "00000000-0000-0000-0000-000000000000"
+  TENANT_ID = "11111111-1111-1111-1111-111111111111"
+  TENANT_SLUG = "acme"
+  TENANT_SCOPE_VALUE = "tenant-acme"
   FETCH_URL = "https://rootcause.test/actions/script"
   TRIGGER_URL = "https://rootcause.test/analyses/test-project"
   SENT_MESSAGE_URL = "https://rootcause.test/analyses/test-project/sent-message"
@@ -28,7 +32,10 @@ module Wire
       "params" => {},
       "schema" => {},
       "runtime" => "ruby",
-      "project_id" => "00000000-0000-0000-0000-000000000000",
+      "project_id" => PROJECT_ID,
+      "tenant_id" => TENANT_ID,
+      "tenant_slug" => TENANT_SLUG,
+      "tenant_scope_value" => TENANT_SCOPE_VALUE,
       "nonce" => "nonce-#{rand(1_000_000)}",
       "issued_at" => Time.now.utc.iso8601
     }.merge(overrides)
@@ -84,20 +91,6 @@ module Wire
     )
   end
 
-  # The canonical proposed-action object as it rides at the result envelope's
-  # top-level `actions[]`. `slug` is the registry action id; `id` is the
-  # action_run uuid. Override any field via kwargs.
-  def action(**overrides)
-    {
-      "id" => "action-run-uuid-1",
-      "slug" => "recompute_record_formulas",
-      "label" => "Run: recompute record formulas",
-      "description" => "what it would do — preflight summary",
-      "url" => "https://rootcause.test/actions/single-use-token",
-      "color" => "#1a7f37"
-    }.merge(overrides)
-  end
-
   # A valid result body (Ruby hash) as rootcause POSTs to the result route.
   # Override or add CallbackPayload fields via kwargs.
   def result(**overrides)
@@ -110,7 +103,7 @@ module Wire
         {"kind" => "summary", "body_markdown" => "Summary. [run trace](https://rc/runs/1)", "body_html" => "<p>Summary.</p>"},
         {"kind" => "widget", "body_markdown" => "widget detail", "body_html" => "<p>widget</p>"}
       ],
-      "actions" => [action],
+      "actions" => [],
       "reasoning_steps" => [],
       "attachments" => [],
       "decline" => nil,

@@ -30,13 +30,16 @@ RootCause::Embassy.configure do |c|
   c.secret    = ENV.fetch("ROOTCAUSE_ACTION_SECRET") # reverse-channel HMAC secret (per project)
   c.fetch_url = "https://<rootcause>/actions/script" # script-by-digest endpoint
   c.timeout   = 20                                   # hard per-run timeout (seconds)
+  c.require_tenant_context = true                    # REQUIRED on tenant-enabled projects
   c.logger    = Rails.logger
 end
 ```
 
 `configure` validates fail-closed at boot: a missing `secret` or `fetch_url` raises immediately.
 
-Other tunables (with defaults): `clock_skew` (300s replay window half-width), `cache_dir`
+Tenant-enabled Embassy deployments **must** set `require_tenant_context = true`; this refuses a signed
+tenantless invocation before script resolution. Flat deployments leave its default `false` so their
+wire remains unchanged. Other tunables (with defaults): `clock_skew` (300s replay window half-width), `cache_dir`
 (`tmp/rootcause/actions`, set `nil` for memory-only), `capture_stdout` (true), `max_stdout_bytes`
 (64 KiB), `max_backtrace_lines` (50), `http_open_timeout` / `http_read_timeout`.
 
@@ -56,13 +59,17 @@ edge, and run under a least-privileged DB role where feasible.
 
 1. **Verify** `X-Webhook-Signature: sha256=<hex>` over the **raw** body (HMAC-SHA256, constant-time).
 2. **Replay-guard** — reject if `issued_at` is outside ±`clock_skew`, or `nonce` was already seen.
-3. **Validate params** against the `schema` carried in the invocation (defense in depth).
-4. **Resolve the script by digest** — cache hit (`sha256 == digest`) or fetch + verify; mismatch is a
+3. **Validate trusted tenant context** — signed `tenant_id`, `tenant_slug`, and `tenant_scope_value`
+   fields are host-owned; flat runs must omit them, while bound runs require id + slug together.
+4. **Validate params** against the `schema` carried in the invocation (defense in depth); tenant
+   selector names are reserved and refused.
+5. **Resolve the script by digest** — cache hit (`sha256 == digest`) or fetch + verify; mismatch is a
    hard refuse.
-5. **Bind + execute** — params as a frozen, symbol-keyed hash, **as data, never interpolated into
-   source**; last expression is the JSON-able return value.
-6. **Hard timeout** + rescue everything → structured `error{class, message, backtrace}`.
-7. **Return signed JSON** — `{ ok, return_value | error, stdout, duration_ms }`. Logs `action_id`,
+6. **Bind + execute** — params as a frozen, symbol-keyed hash, **as data, never interpolated into
+   source**; trusted tenant context is available as `RC_TENANT_ID`, `RC_TENANT_SLUG`, and
+   `RC_TENANT_SCOPE_VALUE` for the duration of the action.
+7. **Hard timeout** + rescue everything → structured `error{class, message, backtrace}`.
+8. **Return signed JSON** — `{ ok, return_value | error, stdout, duration_ms }`. Logs `action_id`,
    `digest`, param **keys**, `ok`, `duration_ms` — never the secret or param values.
 
 ## Security posture (honest caveats)
@@ -74,6 +81,9 @@ edge, and run under a least-privileged DB role where feasible.
   fire mid-transaction. Actions must be written idempotent and safe to retry.
 - **The digest is the authorization unit.** A body runs **iff** its `sha256` equals the
   `script_digest` in the signed invocation.
+- **Tenant scope is host-owned.** Action scripts must scope tenant-aware writes with the applicable
+  `RC_TENANT_*` field. `params` cannot carry tenant selectors. Flat runs remove these variables, as
+  does an absent/empty optional scope value.
 
 ## Async analysis (trigger + result callback)
 

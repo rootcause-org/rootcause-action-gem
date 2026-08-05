@@ -71,18 +71,26 @@ A single mounted handler does exactly this, fail-closed at every step:
    HMAC-SHA256 with the configured reverse-channel `secret`, **constant-time** compare.
 2. **Replay-guard** — reject if `issued_at` is outside a ±5 min window, or if `nonce` has been seen
    (bounded in-memory / cache store of recent nonces).
-3. **Validate params** against the `schema` carried in the invocation (defense in depth — rootcause
+3. **Validate trusted tenant context** — the signed top-level `tenant_id`, `tenant_slug`, and
+   `tenant_scope_value` keys must be strings when present. A flat invocation omits all three; a
+   tenant-bound invocation requires a non-nil UUID id + canonical
+   lowercase slug. Scope value may be absent/empty; no env-bound field may contain NUL.
+4. **Validate params** against the `schema` carried in the invocation (defense in depth — rootcause
    already validated at propose-time). Types: `string`, `integer`, `number`, `boolean`, `string[]`.
-4. **Resolve the script by digest:**
+   Tenant selector names are reserved and rejected in both params and schema.
+5. **Resolve the script by digest:**
    - **Cache hit** — a cached `script.rb` whose `sha256 == script_digest` → use it.
    - **Cache miss** — `GET {fetch_url}?action_id=…&digest=…` (signed the same way), **verify
      `sha256(body) == script_digest`** before caching or running. Digest mismatch / non-2xx → hard
      refuse, fail closed.
-5. **Bind + execute** — params as a **frozen, symbol-keyed hash**, passed **as data, never
-   interpolated into source**. Compile the body once into a callable that receives `params`; its last
-   expression is the (JSON-serializable) return value.
-6. **Hard timeout** + **rescue everything** → structured `error{class, message, backtrace}`.
-7. **Return signed JSON** — `{ ok, return_value | error, stdout?, duration_ms }`, signed with the
+6. **Bind + execute** — params as a **frozen, symbol-keyed hash**, passed **as data, never
+   interpolated into source**. Install the trusted context as `RC_TENANT_ID`, `RC_TENANT_SLUG`, and
+   `RC_TENANT_SCOPE_VALUE` only for the serialized execution (non-empty fields only), removing stale
+   values first and restoring process `ENV` afterward.
+   Compile the body once into a callable that receives `params`; its last expression is the
+   (JSON-serializable) return value.
+7. **Hard timeout** + **rescue everything** → structured `error{class, message, backtrace}`.
+8. **Return signed JSON** — `{ ok, return_value | error, stdout?, duration_ms }`, signed with the
    reverse-channel secret. **Log customer-side**: `action_id`, `digest`, param **keys** (never
    values), `ok`/`err`, `duration_ms`. Never log the secret or param values.
 
@@ -100,6 +108,7 @@ RootCause::Embassy.configure do |c|
   c.mount_at  = "/rootcause/action"                     # the single route
   c.fetch_url = "https://<rootcause>/actions/script"    # script-by-digest endpoint
   c.timeout   = 20                                       # hard per-run timeout (seconds)
+  c.require_tenant_context = true                        # REQUIRED on tenant-enabled projects
   c.logger    = Rails.logger
 end
 ```
@@ -124,6 +133,9 @@ signed with the reverse-channel secret, verify-on-raw, constant-time:
   "schema":        { /* manifest param schema, for gem-side re-validation */ },
   "runtime":       "ruby",
   "project_id":    "uuid",
+  "tenant_id":     "uuid",                       // host-stamped; omitted on a flat run
+  "tenant_slug":   "acme",                       // host-stamped; omitted on a flat run
+  "tenant_scope_value": "tenant-acme",           // host-stamped; optional/empty
   "nonce":         "uuid",                          // replay id
   "issued_at":     "2026-06-03T10:00:00Z"          // ±5 min window
 }
@@ -149,6 +161,14 @@ Rules: sign-then-send / verify-on-raw; constant-time compare; reject on bad sign
 `issued_at`, seen `nonce`, or digest mismatch. Oversize output is truncated (inline JSON only — no
 files / download URLs in v1).
 
+Flat projects omit all three tenant fields so their signed bytes stay backward-compatible. A bound
+invocation requires `tenant_id` and `tenant_slug` together; `tenant_scope_value` may be absent/empty.
+They are trusted because the host stamps them outside model-authored params and signs the exact body.
+`tenant_id`, `tenant_slug`, `tenant_scope_value`, and their `RC_TENANT_*` spellings are reserved param
+names: params can select only an in-tenant target, never the tenant itself. A tenant-enabled Embassy
+deployment must set `require_tenant_context = true`, making an absent tuple a hard refusal before script
+resolution; flat deployments retain the default `false`.
+
 ## 6. The action body it runs (read-only context)
 
 The gem **never authors** actions; it only runs them. For reference, an action in rootcause's
@@ -159,7 +179,9 @@ value:
 ```ruby
 # script.rb — params is a frozen, symbol-keyed hash of VALIDATED values.
 # NEVER interpolate params into source; reference them as data.
-user = User.find_by(email: params[:email])
+tenant_id = ENV.fetch("RC_TENANT_ID")
+raise "tenant scope missing" if tenant_id.empty?
+user = User.find_by(tenant_id: tenant_id, email: params[:email])
 return { found: false } unless user
 user.send_reset_password_instructions
 { found: true, sent_to: user.email }
@@ -178,6 +200,10 @@ runs a body **iff** its hash equals the digest in the signed invocation.
   guarantee atomicity.
 - **Params are data, never source.** Compile the body once; bind `params` as a frozen symbol-keyed
   hash. A param value like `"; system('rm -rf /')"` must be inert — a string, never evaluated.
+- **Tenant scope is not a param.** Read trusted scope from `RC_TENANT_ID`, `RC_TENANT_SLUG`, or
+  `RC_TENANT_SCOPE_VALUE`; every tenant-aware write must scope itself with the applicable field.
+- **`ENV` is process-global.** The executor serializes action bodies while `RC_TENANT_*` is installed,
+  then restores the prior values even on timeout/error so concurrent runs cannot cross tenant context.
 - **Fail closed everywhere:** bad signature, stale/duplicate nonce, schema violation, digest mismatch,
   fetch non-2xx → refuse, return a structured error, log it.
 - **Secrets never in logs / argv / responses.** Log param **keys** only.
@@ -236,6 +262,7 @@ rootcause-embassy-ruby/
 | **Schema** | each type (`string`/`integer`/`number`/`boolean`/`string[]`); missing required → reject; wrong type → reject. |
 | **Resolve-by-digest** | cache hit uses cached body; cache miss → fetch + verify; **digest mismatch → hard refuse** (never runs). |
 | **Param binding is data** | a param value `"; system('x')"` cannot execute — it is an inert string. |
+| **Tenant trust** | signed context reaches `RC_TENANT_*`; tampering fails signature; partial/malformed bound fields refuse; flat runs clear tenant env; tenant selector params refuse. |
 | **Timeout** | a hanging body is killed by the hard timeout and returns a structured error. |
 | **Errors** | any raised exception → structured `error{class, message, backtrace}`; return value must be JSON-able (non-serializable → error). |
 | **Logging** | logs `action_id`/`digest`/param **keys**/`ok`/`duration_ms`; never the secret or param values. |

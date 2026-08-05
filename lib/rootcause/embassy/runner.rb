@@ -13,7 +13,11 @@ module RootCause
       # `signature` was computed over — send both verbatim (verify-on-raw).
       Reply = Struct.new(:status, :body, :signature, keyword_init: true)
 
+      TRUSTED_TENANT_FIELDS = %w[tenant_id tenant_slug tenant_scope_value].freeze
       REQUIRED_FIELDS = %w[action_id script_digest nonce issued_at].freeze
+      TENANT_ID_PATTERN = /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
+      TENANT_SLUG_PATTERN = /\A[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?\z/
+      NIL_UUID = "00000000-0000-0000-0000-000000000000"
 
       def initialize(config, resolver: nil, executor: nil, nonce_store: nil)
         @config = config
@@ -66,6 +70,7 @@ module RootCause
           raise InvalidRequest, "unsupported runtime: #{data["runtime"]}"
         end
 
+        validate_tenant_context!(data)
         data
       rescue JSON::ParserError
         raise InvalidRequest, "body is not valid JSON"
@@ -91,7 +96,7 @@ module RootCause
           project_id: invocation["project_id"]
         )
 
-        # WIRE CONTRACT v1 §5 (see WIRE-CONTRACT.md in rootcause-light): dry_run
+        # WIRE CONTRACT v1 §5 (see WIRE-CONTRACT.md in rootcause): dry_run
         # runs the full verify→replay→schema→resolve pipeline but SKIPS execution,
         # returning a signed ok:true Result that proves the contract holds with
         # zero side effects. Truthiness, not just `== true`, so any truthy host
@@ -106,7 +111,58 @@ module RootCause
           )
         end
 
-        @executor.run(script: script, params: params, digest: invocation["script_digest"])
+        @executor.run(
+          script: script,
+          params: params,
+          digest: invocation["script_digest"],
+          trusted_env: trusted_tenant_env(invocation)
+        )
+      end
+
+      def validate_tenant_context!(invocation)
+        provided = TRUSTED_TENANT_FIELDS.select { |field| invocation.key?(field) }
+        if provided.empty?
+          if @config.require_tenant_context
+            raise InvalidRequest, "tenant context is required for this Embassy deployment"
+          end
+          return
+        end
+
+        invalid = provided.reject { |field| invocation[field].is_a?(String) }
+        unless invalid.empty?
+          raise InvalidRequest, "tenant field(s) must be strings: #{invalid.join(", ")}"
+        end
+        if provided.any? { |field| invocation[field].include?("\0") }
+          raise InvalidRequest, "tenant field(s) must not contain NUL bytes"
+        end
+
+        tenant_id = invocation.fetch("tenant_id", "")
+        tenant_slug = invocation.fetch("tenant_slug", "")
+        tenant_scope_value = invocation.fetch("tenant_scope_value", "")
+
+        if tenant_id.empty? && tenant_slug.empty? && tenant_scope_value.empty?
+          raise InvalidRequest, "flat invocation must omit tenant fields"
+        end
+
+        if tenant_id.empty?
+          raise InvalidRequest, "tenant_id missing for tenant-bound invocation"
+        elsif tenant_slug.empty?
+          raise InvalidRequest, "tenant_slug missing for tenant-bound invocation"
+        elsif !TENANT_ID_PATTERN.match?(tenant_id)
+          raise InvalidRequest, "tenant_id must be a UUID"
+        elsif tenant_id.casecmp?(NIL_UUID)
+          raise InvalidRequest, "tenant_id must not be the nil UUID"
+        elsif !TENANT_SLUG_PATTERN.match?(tenant_slug)
+          raise InvalidRequest, "tenant_slug is invalid"
+        end
+      end
+
+      def trusted_tenant_env(invocation)
+        {
+          "RC_TENANT_ID" => invocation.fetch("tenant_id", ""),
+          "RC_TENANT_SLUG" => invocation.fetch("tenant_slug", ""),
+          "RC_TENANT_SCOPE_VALUE" => invocation.fetch("tenant_scope_value", "")
+        }.reject { |_key, value| value.empty? }.freeze
       end
 
       def clock_ms = Process.clock_gettime(Process::CLOCK_MONOTONIC, :float_millisecond)

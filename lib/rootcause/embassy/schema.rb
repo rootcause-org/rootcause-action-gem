@@ -21,6 +21,10 @@ module RootCause
     # (present in the invocation but absent from the schema) are rejected.
     module Schema
       TYPES = %w[string integer number boolean string[]].freeze
+      RESERVED_TENANT_PARAMS = %w[
+        tenant_id tenant_slug tenant_scope_value
+        rc_tenant_id rc_tenant_slug rc_tenant_scope_value
+      ].freeze
 
       module_function
 
@@ -34,6 +38,12 @@ module RootCause
 
         specs = normalize(schema)
         params = stringify_keys(params)
+        reserved = (params.keys + specs.keys).uniq.select do |name|
+          RESERVED_TENANT_PARAMS.include?(name.downcase)
+        end
+        unless reserved.empty?
+          raise SchemaError, "tenant scope is host-owned; reserved param(s): #{reserved.sort.join(", ")}"
+        end
 
         unknown = params.keys - specs.keys
         unless unknown.empty?

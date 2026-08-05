@@ -54,6 +54,15 @@ RSpec.describe RootCause::Embassy::Config do
     expect(cfg.mount_at).to eq("/rootcause/action")
     expect(cfg.clock_skew).to eq(300)
     expect(cfg.timeout).to eq(20)
+    expect(cfg.require_tenant_context).to be(false)
+  end
+
+  it "rejects a non-boolean tenant-context requirement" do
+    cfg = described_class.new
+    cfg.secret = "s"
+    cfg.fetch_url = "https://x"
+    cfg.require_tenant_context = "yes"
+    expect { cfg.validate! }.to raise_error(ArgumentError, /require_tenant_context/)
   end
 end
 

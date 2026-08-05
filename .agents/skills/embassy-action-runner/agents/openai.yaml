@@ -1,0 +1,4 @@
+interface:
+  display_name: "Embassy Action Runner"
+  short_description: "Maintain the signed Ruby action boundary"
+  default_prompt: "Use $embassy-action-runner to change or review the Ruby Embassy action invocation path."

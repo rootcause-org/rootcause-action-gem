@@ -22,6 +22,10 @@ module RootCause
       # Hard per-run wall-clock timeout in seconds (Timeout backstop).
       attr_accessor :timeout
 
+      # Tenant-enabled Embassy deployments set this true so even a validly signed invocation without
+      # host tenant context is refused before script resolution. Flat deployments leave it false.
+      attr_accessor :require_tenant_context
+
       # Replay window half-width in seconds: an invocation is fresh iff
       # |now - issued_at| <= clock_skew. ±5 min per the spec.
       attr_accessor :clock_skew
@@ -78,6 +82,7 @@ module RootCause
       def initialize
         @mount_at = "/rootcause/action"
         @timeout = 20
+        @require_tenant_context = false
         @clock_skew = 300
         @cache_dir = "tmp/rootcause/actions"
         @capture_stdout = true
@@ -105,6 +110,9 @@ module RootCause
             "(#{fetch_url}) — set ROOTCAUSE_FETCH_URL to the host's /actions/script endpoint"
         end
         raise ArgumentError, "RootCause::Embassy: timeout must be positive" unless timeout.to_f > 0
+        unless [true, false].include?(require_tenant_context)
+          raise ArgumentError, "RootCause::Embassy: require_tenant_context must be true or false"
+        end
         self
       end
 

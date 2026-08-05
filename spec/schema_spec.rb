@@ -52,6 +52,13 @@ RSpec.describe RootCause::Embassy::Schema do
     expect { validate({"evil" => 1}, {"x" => {"type" => "integer"}}) }.to raise_error(SchemaError, /unknown/)
   end
 
+  it "reserves tenant selectors for signed host context" do
+    %w[tenant_id tenant_slug tenant_scope_value RC_TENANT_ID RC_TENANT_SLUG RC_TENANT_SCOPE_VALUE].each do |name|
+      expect { validate({name => "attacker"}, {name => {"type" => "string"}}) }
+        .to raise_error(SchemaError, /host-owned/)
+    end
+  end
+
   it "rejects an unsupported type in the schema" do
     expect { validate({"x" => 1}, {"x" => {"type" => "bigint"}}) }.to raise_error(SchemaError, /unsupported type/)
   end

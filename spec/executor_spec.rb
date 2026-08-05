@@ -20,6 +20,55 @@ RSpec.describe RootCause::Embassy::Executor do
     expect(result.return_value).to eq({got: "ann", frozen: true})
   end
 
+  it "installs only trusted tenant environment for the run and restores the process environment" do
+    original = RootCause::Embassy::Executor::TRUSTED_ENV_KEYS.to_h do |key|
+      [key, [ENV.key?(key), ENV[key]]]
+    end
+    ENV["RC_TENANT_ID"] = "stale-process-value"
+    trusted_env = {
+      "RC_TENANT_ID" => Wire::TENANT_ID,
+      "RC_TENANT_SLUG" => Wire::TENANT_SLUG,
+      "RC_TENANT_SCOPE_VALUE" => Wire::TENANT_SCOPE_VALUE
+    }
+
+    result = executor.run(
+      script: "ENV.values_at(*%w[RC_TENANT_ID RC_TENANT_SLUG RC_TENANT_SCOPE_VALUE])",
+      params: {},
+      digest: Wire.digest_of("ENV.values_at(*%w[RC_TENANT_ID RC_TENANT_SLUG RC_TENANT_SCOPE_VALUE])"),
+      trusted_env: trusted_env
+    )
+
+    expect(result.return_value).to eq([Wire::TENANT_ID, Wire::TENANT_SLUG, Wire::TENANT_SCOPE_VALUE])
+    expect(ENV["RC_TENANT_ID"]).to eq("stale-process-value")
+  ensure
+    original&.each do |key, (present, value)|
+      present ? ENV[key] = value : ENV.delete(key)
+    end
+  end
+
+  it "restores trusted tenant environment after an action raises" do
+    original_present = ENV.key?("RC_TENANT_SLUG")
+    original_value = ENV["RC_TENANT_SLUG"]
+    ENV.delete("RC_TENANT_SLUG")
+    trusted_env = {
+      "RC_TENANT_ID" => Wire::TENANT_ID,
+      "RC_TENANT_SLUG" => Wire::TENANT_SLUG,
+      "RC_TENANT_SCOPE_VALUE" => Wire::TENANT_SCOPE_VALUE
+    }
+
+    result = executor.run(
+      script: "raise ENV.fetch('RC_TENANT_SLUG')",
+      params: {},
+      digest: Wire.digest_of("raise ENV.fetch('RC_TENANT_SLUG')"),
+      trusted_env: trusted_env
+    )
+
+    expect(result.error[:message]).to eq(Wire::TENANT_SLUG)
+    expect(ENV).not_to have_key("RC_TENANT_SLUG")
+  ensure
+    original_present ? ENV["RC_TENANT_SLUG"] = original_value : ENV.delete("RC_TENANT_SLUG")
+  end
+
   it "supports an early `return` from the body (lambda semantics)" do
     script = "return { early: true } if params[:bail]\n{ early: false }"
     expect(run(script, params: {bail: true}).return_value).to eq({early: true})

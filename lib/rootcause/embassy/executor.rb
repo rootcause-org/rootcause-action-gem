@@ -22,6 +22,9 @@ module RootCause
     # (Timeout can fire mid-transaction — actions must be idempotent/retry-safe).
     class Executor
       Result = Struct.new(:ok, :return_value, :error, :stdout, :duration_ms, keyword_init: true)
+      TRUSTED_ENV_KEYS = %w[RC_TENANT_ID RC_TENANT_SLUG RC_TENANT_SCOPE_VALUE].freeze
+      FLAT_TRUSTED_ENV = {}.freeze
+      PROCESS_EXECUTION_MUTEX = Mutex.new
 
       def initialize(config)
         @config = config
@@ -29,16 +32,20 @@ module RootCause
         @mutex = Mutex.new
       end
 
-      def run(script:, params:, digest:)
+      def run(script:, params:, digest:, trusted_env: FLAT_TRUSTED_ENV)
         stdout = +""
         started = clock_ms
         # Defensive: the body is handed params AS DATA. Schema already deep-freezes
         # the validated hash; freeze here too so the executor is correct on its own.
         params = params.freeze
 
-        return_value = capture_stdout(stdout) do
-          callable = compile(script, digest)
-          Timeout.timeout(@config.timeout.to_f) { callable.call(params) }
+        return_value = PROCESS_EXECUTION_MUTEX.synchronize do
+          with_trusted_environment(trusted_env) do
+            capture_stdout(stdout) do
+              callable = compile(script, digest)
+              Timeout.timeout(@config.timeout.to_f) { callable.call(params) }
+            end
+          end
         end
 
         ensure_serializable!(return_value)
@@ -50,6 +57,23 @@ module RootCause
       end
 
       private
+
+      # ENV and $stdout are process-global, so action execution must be serialized
+      # while trusted host context is installed to prevent cross-run tenant bleed.
+      def with_trusted_environment(values)
+        unless (values.keys - TRUSTED_ENV_KEYS).empty? && values.values.all?(String)
+          raise ArgumentError, "trusted_env may contain only RC_TENANT_* string fields"
+        end
+
+        previous = TRUSTED_ENV_KEYS.to_h { |key| [key, [ENV.key?(key), ENV[key]]] }
+        TRUSTED_ENV_KEYS.each { |key| ENV.delete(key) }
+        values.each { |key, value| ENV[key] = value }
+        yield
+      ensure
+        previous&.each do |key, (present, value)|
+          present ? ENV[key] = value : ENV.delete(key)
+        end
+      end
 
       def compile(script, digest)
         hex = Resolver.hex(digest)

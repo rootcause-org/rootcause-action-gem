@@ -67,6 +67,11 @@ One word per concept. Use the **bold** term in code, comments, docs, commits, te
 - **Refactor freely; no backward-compat** while pre-implementation. No shims/flags.
 - **Fail closed everywhere:** bad signature, stale/duplicate nonce, schema violation, digest mismatch,
   fetch non-2xx → refuse, return a structured error, log it.
+- **Tenant scope is host-owned.** Every signed invocation carries `tenant_id`, `tenant_slug`, and
+  `tenant_scope_value` when bound; flat runs omit them to preserve the original wire bytes. The runner
+  installs non-empty trusted values as `RC_TENANT_*` only while the script runs, removing stale values
+  for flat/missing scope. Tenant selectors are forbidden params. Tenant-enabled deployments set
+  `require_tenant_context = true` so an absent tuple refuses before resolution.
 - **Params are data, never source.** Bind `params` as a frozen, symbol-keyed hash; compile the body
   once; capture its last expression as the JSON-able return value. A param value must never be
   interpolated into evaluated source.
