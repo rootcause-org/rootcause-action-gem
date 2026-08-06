@@ -32,6 +32,10 @@ module RootCause
       # Path of the hosted loader on the rootcause origin (`chat_base_url`).
       LOADER_PATH = "/chat/widget/v1/loader.js"
 
+      # The loader is immutable-cached by the host. Bump this whenever the generated tag starts
+      # relying on new loader behavior, so a page cannot pair fresh attributes with stale JavaScript.
+      LOADER_CONTRACT = "2"
+
       module_function
 
       # Mint an embed token. `external_id` is the opaque, stable user id rootcause anchors a
@@ -108,7 +112,7 @@ module RootCause
         base = presence(config.chat_base_url) ||
           raise(ArgumentError, "RootCause::Embassy: chat_base_url is not configured (ROOTCAUSE_CHAT_BASE_URL)")
         attrs = {
-          "src" => base.to_s.chomp("/") + LOADER_PATH,
+          "src" => base.to_s.chomp("/") + LOADER_PATH + "?v=#{LOADER_CONTRACT}",
           "data-rc-project" => config.chat_project.to_s,
           "data-rc-token" => token(config: config, locale: locale, color_scheme: color_scheme, **token_options)
         }

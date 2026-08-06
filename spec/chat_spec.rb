@@ -128,7 +128,9 @@ RSpec.describe RootCause::Embassy::Chat do
 
     it "emits the loader with the publishable project and a fresh token" do
       html = tag
-      expect(html).to start_with(%(<script src="#{Wire::CHAT_BASE_URL}/chat/widget/v1/loader.js" ))
+      expect(html).to start_with(
+        %(<script src="#{Wire::CHAT_BASE_URL}/chat/widget/v1/loader.js?v=#{described_class::LOADER_CONTRACT}" )
+      )
       expect(html).to include(%(data-rc-project="#{Wire::CHAT_PROJECT}"))
       expect(html).to end_with("></script>")
 
@@ -167,7 +169,9 @@ RSpec.describe RootCause::Embassy::Chat do
 
     it "does not double a slash when chat_base_url has a trailing one" do
       html = tag(config: Wire.chat_config(chat_base_url: "#{Wire::CHAT_BASE_URL}/"))
-      expect(html).to include(%(src="#{Wire::CHAT_BASE_URL}/chat/widget/v1/loader.js"))
+      expect(html).to include(
+        %(src="#{Wire::CHAT_BASE_URL}/chat/widget/v1/loader.js?v=#{described_class::LOADER_CONTRACT}")
+      )
     end
 
     it "names the missing ENV when chat_base_url is unset" do

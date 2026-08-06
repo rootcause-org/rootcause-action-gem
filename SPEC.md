@@ -198,6 +198,10 @@ The `tenant` must come from the **server-side authorized** tenant context: every
 signature, so swapping tenant/user/origin/expiry invalidates the token, and nothing outside the
 signature is ever trusted.
 
+The view helper appends a loader-contract revision to `loader.js`. The host immutable-caches that
+static asset, so the revision must change whenever a generated attribute starts requiring new loader
+behavior; otherwise an already-open browser can pair the new tag with stale JavaScript.
+
 ## 6. The action body it runs (read-only context)
 
 The gem **never authors** actions; it only runs them. For reference, an action in rootcause's
