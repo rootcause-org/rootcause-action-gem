@@ -207,6 +207,7 @@ end
                     tenant:      ActsAsTenant.current_tenant.slug,
                     origin:      request.base_url,
                     locale:      I18n.locale,
+                    color_scheme: "light",
                     mode:        :page, target: "#rc-chat") %>
 ```
 
@@ -220,13 +221,19 @@ every claim rides inside the signature, so a swapped tenant is simply an invalid
 English. It rides both the claim and `data-rc-locale`, so the panel's server-rendered chrome is in the
 right language from the first paint. Omit it to let the browser decide.
 
+`color_scheme` is optional and purely presentational — it pins the chat panel to `light` or `dark`.
+Anything else follows the viewer's own light/dark preference. It rides both the claim and
+`data-rc-color-scheme`, so the panel paints in the right scheme from the first paint. Set it when your
+app is always one scheme (e.g. an always-light admin); omit it to follow the viewer.
+
 Outside Rails (or to mint the token yourself, e.g. for a JSON endpoint that refreshes an expiring
 one):
 
 ```ruby
 RootCause::Embassy.chat_token(external_id: admin.id, kind: "kampadmin_admin",
-  tenant: tenant.slug, origin: "https://admin.kampadmin.be", locale: "nl", ttl: 900)
-# => "eyJhbGciOiJIUzI1NiIs…"  (claims: sub/aud/iss/jti/origin/tenant/locale/iat/nbf/exp/principal — see SPEC.md §5b)
+  tenant: tenant.slug, origin: "https://admin.kampadmin.be", locale: "nl", color_scheme: "light",
+  ttl: 900)
+# => "eyJhbGciOiJIUzI1NiIs…"  (claims: sub/aud/iss/jti/origin/tenant/locale/color_scheme/iat/nbf/exp/principal — see SPEC.md §5b)
 ```
 
 `RootCause::Embassy::Chat.widget_tag_html(...)` is the framework-agnostic core behind the view helper

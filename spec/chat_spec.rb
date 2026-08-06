@@ -54,6 +54,17 @@ RSpec.describe RootCause::Embassy::Chat do
       expect(Wire.decode_jwt(mint(locale: "")).last).not_to have_key("locale")
     end
 
+    it "carries color_scheme only when given, unvalidated" do
+      _, claims = Wire.decode_jwt(mint(color_scheme: "dark"))
+      expect(claims["color_scheme"]).to eq("dark")
+
+      # Pass-through: the host allowlists the value, a bad one only falls back to auto.
+      expect(Wire.decode_jwt(mint(color_scheme: :sepia)).last["color_scheme"]).to eq("sepia")
+
+      expect(Wire.decode_jwt(mint).last).not_to have_key("color_scheme")
+      expect(Wire.decode_jwt(mint(color_scheme: "")).last).not_to have_key("color_scheme")
+    end
+
     it "honours a custom ttl and keeps nbf/iat at issue time" do
       now = Time.at(1_700_000_000)
       _, claims = Wire.decode_jwt(mint(ttl: 60, now: now))
@@ -137,6 +148,14 @@ RSpec.describe RootCause::Embassy::Chat do
       html = tag(locale: :nl)
       expect(html).to include(%(data-rc-locale="nl"))
       expect(Wire.decode_jwt(html[/data-rc-token="([^"]+)"/, 1]).last["locale"]).to eq("nl")
+    end
+
+    it "puts color_scheme on both the claim and the loader attribute, only when asked" do
+      expect(tag).not_to include("data-rc-color-scheme")
+
+      html = tag(color_scheme: :light)
+      expect(html).to include(%(data-rc-color-scheme="light"))
+      expect(Wire.decode_jwt(html[/data-rc-token="([^"]+)"/, 1]).last["color_scheme"]).to eq("light")
     end
 
     it "html-escapes every attribute value so no value can break out of the tag" do

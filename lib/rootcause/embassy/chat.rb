@@ -46,9 +46,12 @@ module RootCause
       # @param locale [String, Symbol, nil] UI language for the chat panel ("en", "nl", "fr"; a region
       #   subtag like "nl-BE" is fine). A presentation hint only — it grants nothing, and the panel
       #   falls back to the browser language and then English on anything it does not support.
+      # @param color_scheme [String, Symbol, nil] forced panel color scheme ("light" or "dark"). A
+      #   presentation hint only — it grants nothing, and anything else falls back to following the
+      #   viewer's own light/dark preference.
       # @return [String] compact HS256 JWT
       # @raise [ArgumentError] unconfigured chat, or a blank/malformed argument
-      def token(external_id:, origin:, kind:, tenant: nil, locale: nil, ttl: DEFAULT_TTL,
+      def token(external_id:, origin:, kind:, tenant: nil, locale: nil, color_scheme: nil, ttl: DEFAULT_TTL,
         asserted_by: nil, assurance: DEFAULT_ASSURANCE, config: Embassy.config, now: Time.now)
         secret = presence(config.chat_secret) ||
           raise(ArgumentError, "RootCause::Embassy: chat_secret is not configured (ROOTCAUSE_CHAT_SECRET)")
@@ -82,6 +85,7 @@ module RootCause
         # explicit null would be indistinguishable while making the wire noisier.
         claims["tenant"] = tenant.to_s unless blank?(tenant)
         claims["locale"] = locale.to_s unless blank?(locale)
+        claims["color_scheme"] = color_scheme.to_s unless blank?(color_scheme)
 
         encode(claims, secret)
       end
@@ -97,17 +101,21 @@ module RootCause
       # @param target [String, nil] CSS selector the page-mode surface mounts into, e.g. "#rc-chat"
       # @param locale [String, Symbol, nil] see .token — rides BOTH the claim and data-rc-locale, so the
       #   loader can localize the panel's server-rendered chrome without first decoding the token.
-      def widget_tag_html(mode: nil, target: nil, locale: nil, config: Embassy.config, **token_options)
+      # @param color_scheme [String, Symbol, nil] see .token — rides BOTH the claim and
+      #   data-rc-color-scheme, so the panel paints in the right scheme without a token decode first.
+      def widget_tag_html(mode: nil, target: nil, locale: nil, color_scheme: nil, config: Embassy.config,
+        **token_options)
         base = presence(config.chat_base_url) ||
           raise(ArgumentError, "RootCause::Embassy: chat_base_url is not configured (ROOTCAUSE_CHAT_BASE_URL)")
         attrs = {
           "src" => base.to_s.chomp("/") + LOADER_PATH,
           "data-rc-project" => config.chat_project.to_s,
-          "data-rc-token" => token(config: config, locale: locale, **token_options)
+          "data-rc-token" => token(config: config, locale: locale, color_scheme: color_scheme, **token_options)
         }
         attrs["data-rc-mode"] = mode.to_s unless blank?(mode)
         attrs["data-rc-target"] = target.to_s unless blank?(target)
         attrs["data-rc-locale"] = locale.to_s unless blank?(locale)
+        attrs["data-rc-color-scheme"] = color_scheme.to_s unless blank?(color_scheme)
         rendered = attrs.map { |k, v| %(#{k}="#{CGI.escapeHTML(v)}") }.join(" ")
         "<script #{rendered}></script>"
       end
