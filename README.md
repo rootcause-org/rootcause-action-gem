@@ -206,6 +206,7 @@ end
                     kind:        "kampadmin_admin",
                     tenant:      ActsAsTenant.current_tenant.slug,
                     origin:      request.base_url,
+                    locale:      I18n.locale,
                     mode:        :page, target: "#rc-chat") %>
 ```
 
@@ -214,13 +215,18 @@ conversation ownership to it. `tenant` is the rootcause tenant **slug**, require
 projects, and must come from your **server-side authorized** tenant context (never client input):
 every claim rides inside the signature, so a swapped tenant is simply an invalid token.
 
+`locale` is optional and purely presentational — it sets the chat panel's UI language (`en`, `nl`,
+`fr`; a region subtag like `nl-BE` is fine). Anything else falls back to the browser language and then
+English. It rides both the claim and `data-rc-locale`, so the panel's server-rendered chrome is in the
+right language from the first paint. Omit it to let the browser decide.
+
 Outside Rails (or to mint the token yourself, e.g. for a JSON endpoint that refreshes an expiring
 one):
 
 ```ruby
 RootCause::Embassy.chat_token(external_id: admin.id, kind: "kampadmin_admin",
-  tenant: tenant.slug, origin: "https://admin.kampadmin.be", ttl: 900)
-# => "eyJhbGciOiJIUzI1NiIs…"  (claims: sub/aud/iss/jti/origin/tenant/iat/nbf/exp/principal — see SPEC.md §5b)
+  tenant: tenant.slug, origin: "https://admin.kampadmin.be", locale: "nl", ttl: 900)
+# => "eyJhbGciOiJIUzI1NiIs…"  (claims: sub/aud/iss/jti/origin/tenant/locale/iat/nbf/exp/principal — see SPEC.md §5b)
 ```
 
 `RootCause::Embassy::Chat.widget_tag_html(...)` is the framework-agnostic core behind the view helper

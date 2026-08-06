@@ -43,9 +43,12 @@ module RootCause
       #
       # @param origin [String] the browser Origin the token is pinned to ("https://host[:port]");
       #   the host re-checks it against the request's Origin header and the project allowlist.
+      # @param locale [String, Symbol, nil] UI language for the chat panel ("en", "nl", "fr"; a region
+      #   subtag like "nl-BE" is fine). A presentation hint only — it grants nothing, and the panel
+      #   falls back to the browser language and then English on anything it does not support.
       # @return [String] compact HS256 JWT
       # @raise [ArgumentError] unconfigured chat, or a blank/malformed argument
-      def token(external_id:, origin:, kind:, tenant: nil, ttl: DEFAULT_TTL,
+      def token(external_id:, origin:, kind:, tenant: nil, locale: nil, ttl: DEFAULT_TTL,
         asserted_by: nil, assurance: DEFAULT_ASSURANCE, config: Embassy.config, now: Time.now)
         secret = presence(config.chat_secret) ||
           raise(ArgumentError, "RootCause::Embassy: chat_secret is not configured (ROOTCAUSE_CHAT_SECRET)")
@@ -78,6 +81,7 @@ module RootCause
         # Omitted rather than blank: the host reads a present-but-empty tenant as "no tenant", and an
         # explicit null would be indistinguishable while making the wire noisier.
         claims["tenant"] = tenant.to_s unless blank?(tenant)
+        claims["locale"] = locale.to_s unless blank?(locale)
 
         encode(claims, secret)
       end
@@ -91,16 +95,19 @@ module RootCause
       #
       # @param mode [Symbol, String, nil] :page for the full-page surface (default: the floating widget)
       # @param target [String, nil] CSS selector the page-mode surface mounts into, e.g. "#rc-chat"
-      def widget_tag_html(mode: nil, target: nil, config: Embassy.config, **token_options)
+      # @param locale [String, Symbol, nil] see .token — rides BOTH the claim and data-rc-locale, so the
+      #   loader can localize the panel's server-rendered chrome without first decoding the token.
+      def widget_tag_html(mode: nil, target: nil, locale: nil, config: Embassy.config, **token_options)
         base = presence(config.chat_base_url) ||
           raise(ArgumentError, "RootCause::Embassy: chat_base_url is not configured (ROOTCAUSE_CHAT_BASE_URL)")
         attrs = {
           "src" => base.to_s.chomp("/") + LOADER_PATH,
           "data-rc-project" => config.chat_project.to_s,
-          "data-rc-token" => token(config: config, **token_options)
+          "data-rc-token" => token(config: config, locale: locale, **token_options)
         }
         attrs["data-rc-mode"] = mode.to_s unless blank?(mode)
         attrs["data-rc-target"] = target.to_s unless blank?(target)
+        attrs["data-rc-locale"] = locale.to_s unless blank?(locale)
         rendered = attrs.map { |k, v| %(#{k}="#{CGI.escapeHTML(v)}") }.join(" ")
         "<script #{rendered}></script>"
       end

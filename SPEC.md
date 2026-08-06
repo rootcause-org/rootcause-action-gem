@@ -186,6 +186,7 @@ rejected host-side.
   "jti": "uuid",                                   // single-use: burned when a session opens
   "origin": "https://admin.kampadmin.be",          // scheme://host[:port], re-checked vs the Origin header
   "tenant": "heyo",                                // OMITTED when flat; required on tenant-enabled projects
+  "locale": "nl",                                  // OPTIONAL panel UI language hint; unsupported ⇒ en
   "iat": 1785932045, "nbf": 1785932045, "exp": 1785932945,   // ttl 900s default, ±60s host leeway
   "principal": { "kind": "kampadmin_admin", "external_id": "<external_id>",
                  "asserted_by": "<chat_project>", "assurance": "customer_backend_jwt" }

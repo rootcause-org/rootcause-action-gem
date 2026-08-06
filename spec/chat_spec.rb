@@ -46,6 +46,14 @@ RSpec.describe RootCause::Embassy::Chat do
       expect(blank).not_to have_key("tenant")
     end
 
+    it "carries locale only when given" do
+      _, claims = Wire.decode_jwt(mint(locale: "nl-BE"))
+      expect(claims["locale"]).to eq("nl-BE")
+
+      expect(Wire.decode_jwt(mint).last).not_to have_key("locale")
+      expect(Wire.decode_jwt(mint(locale: "")).last).not_to have_key("locale")
+    end
+
     it "honours a custom ttl and keeps nbf/iat at issue time" do
       now = Time.at(1_700_000_000)
       _, claims = Wire.decode_jwt(mint(ttl: 60, now: now))
@@ -121,6 +129,14 @@ RSpec.describe RootCause::Embassy::Chat do
       expect(tag).not_to include("data-rc-mode")
       expect(tag(mode: :page, target: "#rc-chat"))
         .to include(%(data-rc-mode="page"), %(data-rc-target="#rc-chat"))
+    end
+
+    it "puts locale on both the claim and the loader attribute, only when asked" do
+      expect(tag).not_to include("data-rc-locale")
+
+      html = tag(locale: :nl)
+      expect(html).to include(%(data-rc-locale="nl"))
+      expect(Wire.decode_jwt(html[/data-rc-token="([^"]+)"/, 1]).last["locale"]).to eq("nl")
     end
 
     it "html-escapes every attribute value so no value can break out of the tag" do
