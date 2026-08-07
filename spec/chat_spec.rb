@@ -23,7 +23,7 @@ RSpec.describe RootCause::Embassy::Chat do
         "tenant" => "heyo",
         "iat" => now.to_i,
         "nbf" => now.to_i,
-        "exp" => now.to_i + 900
+        "exp" => now.to_i + 7200
       )
       expect(claims["principal"]).to eq(
         "kind" => "kampadmin_admin",

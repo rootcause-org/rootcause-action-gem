@@ -21,9 +21,11 @@ module RootCause
     # Hand-rolled HS256 (OpenSSL::HMAC + base64url + JSON) keeps the gem stdlib-only; the claim set
     # mirrors the host's verifier (rootcause `internal/chat/jwt.go`) exactly.
     module Chat
-      # Token lifetime the host is tuned for: long enough for a page render + a chat session open,
-      # short enough that a leaked token is near-worthless. The host also allows 60s clock skew.
-      DEFAULT_TTL = 900
+      # Token lifetime the host is tuned for: long enough that a page left open across a working
+      # session can still open its chat without a reload, short enough that a leaked token ages out
+      # on its own. The `jti` is single-use anyway, so this only bounds the *unopened* window.
+      # The host also allows 60s clock skew.
+      DEFAULT_TTL = 7200
 
       # How the identity was established, carried through to rootcause as the principal's assurance
       # level. "customer_backend_jwt" = asserted by the customer's own authenticated server session.

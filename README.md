@@ -232,7 +232,7 @@ one):
 ```ruby
 RootCause::Embassy.chat_token(external_id: admin.id, kind: "kampadmin_admin",
   tenant: tenant.slug, origin: "https://admin.kampadmin.be", locale: "nl", color_scheme: "light",
-  ttl: 900)
+  ttl: 7200)
 # => "eyJhbGciOiJIUzI1NiIs…"  (claims: sub/aud/iss/jti/origin/tenant/locale/color_scheme/iat/nbf/exp/principal — see SPEC.md §5b)
 ```
 
