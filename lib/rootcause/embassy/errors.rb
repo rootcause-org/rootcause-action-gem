@@ -67,5 +67,11 @@ module RootCause
     # (A blank sent_body/session_id or missing sent_message_url raises ArgumentError
     # before anything is sent — not retryable.)
     class SentMessageError < StandardError; end
+
+    # The API plane could not obtain a bearer: the `rcor_` refresh-token →
+    # access-token exchange failed (transport, non-2xx, or a malformed response).
+    # Raised only INSIDE Api, which turns it into a retryable Api::Response — the
+    # generic API caller never raises for a call outcome.
+    class ApiAuthError < StandardError; end
   end
 end

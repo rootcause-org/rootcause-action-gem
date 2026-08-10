@@ -181,6 +181,39 @@ RootCause::Embassy.start_analysis(
 `session_id` is **opaque** to the gem — store it and forward it, never interpret it. Omit it (or pass
 `nil`) on the first turn; the host mints one and returns it in the 202.
 
+## Call any rootcause endpoint (the API plane)
+
+`RootCause::Embassy.api` is a **generic** authenticated caller for rootcause's HTTP API — the same
+surface the `rc` CLI drives — so a new host endpoint is usable the day it ships, with no gem release
+and no per-endpoint wrapper. The gem owns auth (including the OAuth `rcor_` → `rcoa_` exchange and
+its cache), timeouts and JSON; you own the path and the body. **What endpoints exist is the host's
+contract** — see rootcause's API spec/manifest. Full details:
+[docs/generic-api.md](docs/generic-api.md).
+
+```ruby
+# config/initializers/rootcause.rb — extends the block above (both or neither)
+RootCause::Embassy.configure do |c|
+  c.api_base_url = ENV.fetch("ROOTCAUSE_API_BASE_URL") # e.g. "https://app.replypen.com"
+  c.api_key      = ENV.fetch("ROOTCAUSE_API_KEY")      # rcor_… machine credential
+end
+```
+
+```ruby
+result = RootCause::Embassy.api.patch("/api/v1/tenants/#{slug}/profile",
+  body: {settings: {iban: "BE80 7350 6212 7777", care_hours: "8:00 - 17:30"}, source: "embassy"})
+
+result.ok?          # 2xx?
+result.status       # HTTP status (nil on a transport/auth failure)
+result.body         # parsed JSON when it parses, else the raw String
+result.field_errors # the host's per-field validation rejections on a 4xx
+result.retryable?   # transport / auth / 5xx → true; any other 4xx → false
+```
+
+An HTTP outcome **never raises** — inspect the frozen result (`retryable?` tells a job whether to
+re-enqueue). Only a misconfiguration or bad argument raises `ArgumentError`. `api_key` is a **third,
+separate** privilege boundary: never the action `secret`, never `chat_secret`, and none falls back to
+another. Both settings are optional — an Embassy that never calls `.api` behaves exactly as before.
+
 ## Embedded chat (mint a token, drop in the widget)
 
 Let a signed-in user chat with the rootcause agent from inside your app. Your backend mints a

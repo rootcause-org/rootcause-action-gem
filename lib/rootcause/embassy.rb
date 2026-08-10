@@ -14,6 +14,8 @@ require_relative "embassy/rack"
 require_relative "embassy/result"
 require_relative "embassy/result_handler"
 require_relative "embassy/client"
+require_relative "embassy/api_auth"
+require_relative "embassy/api"
 require_relative "embassy/result_rack"
 require_relative "embassy/chat"
 require_relative "embassy/chat_view_helper"
@@ -41,6 +43,7 @@ module RootCause
         @config = config
         @runner = Runner.new(config)
         @client = Client.new(config)
+        @api = Api.new(config)
         @result_receiver = ResultReceiver.new(config)
         config
       end
@@ -59,6 +62,13 @@ module RootCause
 
       def result_receiver
         @result_receiver || raise("RootCause::Embassy is not configured — call .configure first")
+      end
+
+      # The API plane: call ANY rootcause backend endpoint, bearer-authed by the
+      # gem. `api.get/post/patch/put/delete(path, body:, params:)` return an
+      # Api::Response instead of raising. See docs/generic-api.md.
+      def api
+        @api || raise("RootCause::Embassy is not configured — call .configure first")
       end
 
       # Outbound trigger: ask rootcause to analyze something and get an analysis_id
@@ -85,7 +95,9 @@ module RootCause
         @config = nil
         @runner = nil
         @client = nil
+        @api = nil
         @result_receiver = nil
+        ApiAuth.reset!
       end
     end
   end

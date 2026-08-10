@@ -74,6 +74,20 @@ module RootCause
       # sending anything larger. Large files / fetch-URLs are out of scope (v1).
       attr_accessor :max_attachment_bytes
 
+      # --- API plane (see Api, docs/generic-api.md) ---
+
+      # Origin of the rootcause API, e.g. "https://app.replypen.com" — paths are
+      # joined onto it ("/api/v1/…"), and it is also where the OAuth token
+      # exchange happens. Optional: an Embassy that never calls `.api` leaves it nil.
+      attr_accessor :api_base_url
+
+      # Machine credential for the API plane (ENV ROOTCAUSE_API_KEY). An `rcor_`
+      # refresh token is exchanged for a short-lived `rcoa_` access token and
+      # cached (ApiAuth); anything else is sent verbatim as the bearer. A THIRD,
+      # separate privilege boundary — never the action `secret` or `chat_secret`.
+      # Never logged.
+      attr_accessor :api_key
+
       # --- embedded chat (see Chat) ---
 
       # The project's `webhook_secret`, used ONLY to mint embed-chat tokens (ENV
@@ -130,14 +144,31 @@ module RootCause
         unless [true, false].include?(require_tenant_context)
           raise ArgumentError, "RootCause::Embassy: require_tenant_context must be true or false"
         end
+        validate_api!
         validate_chat!
         self
       end
+
+      # True once the API plane is wired far enough to make a call.
+      def api_configured? = !blank?(api_base_url) && !blank?(api_key)
 
       # True once chat is wired far enough to mint a token.
       def chat_configured? = !blank?(chat_secret) && !blank?(chat_project)
 
       private
+
+      # The API plane is opt-in: an Embassy that sets neither attribute validates exactly as before.
+      # Once ONE of them is set the deployment intends API calls, so a half-wired one is a boot-time
+      # mistake rather than a first-call surprise in a background job.
+      def validate_api!
+        return if blank?(api_base_url) && blank?(api_key)
+
+        raise ArgumentError, "RootCause::Embassy: api_base_url is required when api_key is set" if blank?(api_base_url)
+        raise ArgumentError, "RootCause::Embassy: api_key is required when api_base_url is set" if blank?(api_key)
+        return if %r{\Ahttps?://\S+\z}.match?(api_base_url.to_s)
+
+        raise ArgumentError, "RootCause::Embassy: api_base_url must be an absolute http(s) URL"
+      end
 
       # Chat is opt-in: an Embassy that sets none of the chat attributes validates exactly as before.
       # Once ANY of them is set the deployment intends chat, so a half-wired one is a boot-time

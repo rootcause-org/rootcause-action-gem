@@ -202,6 +202,25 @@ The view helper appends a loader-contract revision to `loader.js`. The host immu
 static asset, so the revision must change whenever a generated attribute starts requiring new loader
 behavior; otherwise an already-open browser can pair the new tag with stale JavaScript.
 
+### 5c. API plane (gem → host, bearer)
+
+A **fifth** message shape, and the only one that is not HMAC-signed: `RootCause::Embassy.api` calls
+rootcause's ordinary HTTP API (the surface the `rc` CLI drives) with `Authorization: Bearer …`. It is
+**generic by design** — the gem ships transport + auth, never per-endpoint wrappers, so a new host
+endpoint needs no gem release. Endpoint inventory is the host's contract, not this spec's.
+
+The `api_key` is a **third privilege boundary** (never `secret`, never `chat_secret`, no fallback).
+An `rcor_` refresh token is exchanged for a 1h `rcoa_` access token —
+`POST {api_base_url}/oauth/token`, form-encoded `grant_type=refresh_token`, `refresh_token`,
+`client_id=rcocl_cli` — cached in-process per `(base_url, key)` behind a mutex, refreshed 60s before
+expiry on a monotonic clock, and burned + re-exchanged **once** on a 401. Any non-`rcor_` key is the
+bearer verbatim.
+
+Calls return a frozen `Api::Response` (`ok?`, `status`, `body`, `field_errors`, `error`,
+`retryable?`) and **never raise on an HTTP outcome** — transport/auth/5xx are `retryable?`, every
+other 4xx is permanent. Only misconfiguration/bad arguments raise. Both config attributes are
+optional and validated together at boot. See [docs/generic-api.md](docs/generic-api.md).
+
 ## 6. The action body it runs (read-only context)
 
 The gem **never authors** actions; it only runs them. For reference, an action in rootcause's

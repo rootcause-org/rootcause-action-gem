@@ -58,6 +58,25 @@ module Wire
     )
   end
 
+  # --- API plane ---
+  API_BASE_URL = "https://rootcause.test"
+  TOKEN_URL = "https://rootcause.test/oauth/token"
+  REFRESH_KEY = "rcor_machine_credential"
+  ACCESS_TOKEN = "rcoa_access_token"
+
+  def api_config(**overrides)
+    config(api_base_url: API_BASE_URL, api_key: REFRESH_KEY, **overrides)
+  end
+
+  # Stub the host's OAuth token endpoint (the rcor_ → rcoa_ exchange).
+  def stub_token(access_token: ACCESS_TOKEN, expires_in: 3600, status: 200, body: nil)
+    WebMock.stub_request(:post, TOKEN_URL).to_return(
+      status: status,
+      body: body || JSON.generate("access_token" => access_token, "expires_in" => expires_in, "token_type" => "Bearer"),
+      headers: {"content-type" => "application/json"}
+    )
+  end
+
   # --- embedded chat ---
   # The chat key is the project's webhook_secret — deliberately NOT the reverse-channel SECRET above.
   CHAT_SECRET = "test-project-webhook-secret"
