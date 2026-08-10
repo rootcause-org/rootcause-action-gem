@@ -192,11 +192,16 @@ module RootCause
           body: parsed,
           field_errors: hash["field_errors"],
           error: hash["error"] || hash["message"] || "http_#{status}",
-          # 5xx is the host having a bad time (worth a retry); a 4xx is a
-          # permanent caller/validation error.
-          retryable: status >= 500
+          retryable: retryable_status?(status)
         ).freeze
       end
+
+      # 5xx is the host having a bad time. Two 4xx are transient despite the
+      # class: 429 (rate limit — a sweep pushing every tenant at once WILL hit
+      # it) and 408 (the host timed the request out). Every other 4xx is a
+      # permanent caller/validation error: retrying it just burns quota and
+      # buries the real signal.
+      def retryable_status?(status) = status >= 500 || status == 429 || status == 408
 
       # JSON when it parses, raw String otherwise (some endpoints answer plain
       # text; an empty body is nil).

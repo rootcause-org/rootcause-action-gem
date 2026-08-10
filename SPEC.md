@@ -217,7 +217,8 @@ expiry on a monotonic clock, and burned + re-exchanged **once** on a 401. Any no
 bearer verbatim.
 
 Calls return a frozen `Api::Response` (`ok?`, `status`, `body`, `field_errors`, `error`,
-`retryable?`) and **never raise on an HTTP outcome** — transport/auth/5xx are `retryable?`, every
+`retryable?`) and **never raise on an HTTP outcome** — transport/auth/5xx plus 429 and 408 (rate
+limit and host-side timeout are backpressure, not a contract break) are `retryable?`, every
 other 4xx is permanent. Only misconfiguration/bad arguments raise. Both config attributes are
 optional and validated together at boot. Credentials are **project-pinned**, so an app spanning
 several rootcause projects builds an independent caller per credential with

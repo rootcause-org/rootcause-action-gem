@@ -98,7 +98,7 @@ Every outcome comes back as a frozen `RootCause::Embassy::Api::Response`:
 | `body` | parsed JSON (Hash/Array) when it parses, else the raw String, `nil` when empty |
 | `field_errors` | the host's per-field validation rejections from a 4xx `validation_failed` body |
 | `error` | the host's `error`/`message`, or `http_<status>`, or the transport/auth reason |
-| `retryable?` | **true** for transport failures, auth failures and 5xx; **false** for every other 4xx |
+| `retryable?` | **true** for transport failures, auth failures, 5xx, **429** and **408**; **false** for every other 4xx |
 
 Only a **misconfiguration or a bad argument** raises `ArgumentError` (unset `api_base_url`/`api_key`,
 blank path, off-origin URL, unsupported verb) — that is a deploy/caller bug that must reach a
@@ -106,6 +106,11 @@ developer, not hide in a result.
 
 Rule of thumb for a job: `retryable?` → raise/re-enqueue and let your retry policy work (the writes
 this plane targets are idempotent merges); otherwise log `error` + `field_errors` for ops and stop.
+
+**429 and 408 are retryable**, despite being 4xx: a sweep that pushes every tenant at once will hit
+the host's rate limit, and that is backpressure, not a contract break — treating it as permanent
+would silently drop those pushes (and page ops for nothing). Every other 4xx is a genuine caller or
+validation error, where a retry only burns quota and buries the real signal.
 
 ## Worked example — push tenant settings
 

@@ -177,6 +177,18 @@ RSpec.describe RootCause::Embassy::Api do
       expect(result).to be_retryable
     end
 
+    it "classifies 429 and 408 as retryable — a whole-fleet sweep rate-limits, it does not break" do
+      [429, 408].each do |status|
+        stub_call(status: status, body: "")
+        expect(api.patch(path)).to be_retryable
+      end
+
+      [400, 403, 404, 422].each do |status|
+        stub_call(status: status, body: "")
+        expect(api.patch(path)).not_to be_retryable
+      end
+    end
+
     it "classifies a transport failure as retryable with no status" do
       WebMock.stub_request(:patch, url).to_timeout
 

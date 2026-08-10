@@ -206,7 +206,7 @@ result.ok?          # 2xx?
 result.status       # HTTP status (nil on a transport/auth failure)
 result.body         # parsed JSON when it parses, else the raw String
 result.field_errors # the host's per-field validation rejections on a 4xx
-result.retryable?   # transport / auth / 5xx → true; any other 4xx → false
+result.retryable?   # transport / auth / 5xx / 429 / 408 → true; any other 4xx → false
 ```
 
 Refresh tokens are **project-pinned**: to talk to a second rootcause project, build an independent
