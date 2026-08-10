@@ -219,7 +219,9 @@ bearer verbatim.
 Calls return a frozen `Api::Response` (`ok?`, `status`, `body`, `field_errors`, `error`,
 `retryable?`) and **never raise on an HTTP outcome** — transport/auth/5xx are `retryable?`, every
 other 4xx is permanent. Only misconfiguration/bad arguments raise. Both config attributes are
-optional and validated together at boot. See [docs/generic-api.md](docs/generic-api.md).
+optional and validated together at boot. Credentials are **project-pinned**, so an app spanning
+several rootcause projects builds an independent caller per credential with
+`Embassy.api_for(api_base_url:, api_key:)`; caches never mix. See [docs/generic-api.md](docs/generic-api.md).
 
 ## 6. The action body it runs (read-only context)
 

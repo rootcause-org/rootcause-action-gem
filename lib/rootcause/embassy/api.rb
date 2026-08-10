@@ -38,6 +38,34 @@ module RootCause
         def retryable? = !!retryable
       end
 
+      # A caller bound to ONE project's credential. rootcause refresh tokens are
+      # project-pinned, so an app that talks to several projects (e.g. a tenant
+      # profile on one, brain edits on two others) holds several credentials and
+      # builds one Api each — see Embassy.api_for. Tokens never mix: ApiAuth keys
+      # its cache by (base_url, api_key), so each credential exchanges and
+      # refreshes on its own.
+      #
+      # Timeouts and the logger are inherited from `template` (the configured
+      # Config) when there is one, so a per-project caller behaves like the
+      # singleton in every respect but its credential.
+      #
+      # @raise [ArgumentError] blank key, blank/relative base url
+      def self.for(api_base_url:, api_key:, template: nil)
+        config = template ? template.dup : Config.new
+        config.api_base_url = api_base_url
+        config.api_key = api_key
+        # validate_api! passes a pair that is blank on BOTH sides (the opt-out an
+        # Embassy without an API plane relies on) — here, both are required.
+        raise ArgumentError, "RootCause::Embassy: api_base_url is required" if blank_value?(api_base_url)
+        raise ArgumentError, "RootCause::Embassy: api_key is required" if blank_value?(api_key)
+
+        config.validate_api!
+        new(config)
+      end
+
+      def self.blank_value?(value) = value.nil? || value.to_s.empty?
+      private_class_method :blank_value?
+
       # Verbs the API plane speaks. `body` is JSON-encoded; `params` becomes the
       # query string.
       def initialize(config)

@@ -52,6 +52,27 @@ POST {api_base_url}/oauth/token          (form-encoded)
 - A key that does **not** start with `rcor_` is used **verbatim** as the bearer — a static-bearer
   deployment needs no code change.
 
+## Several projects (refresh tokens are project-pinned)
+
+A rootcause credential is bound to **one project**, so an app that spans several — e.g. KampAdmin
+pushing tenant settings to `kampadmin` while editing brains on `kampadmin-support` and
+`kampadmin-staff` — holds one credential per project and builds a caller for each:
+
+```ruby
+support = RootCause::Embassy.api_for(
+  api_base_url: ENV.fetch("ROOTCAUSE_API_BASE_URL"),
+  api_key:      ENV.fetch("ROOTCAUSE_SUPPORT_API_KEY"), # a DIFFERENT rcor_ token
+)
+support.post("/api/v1/brains/kampadmin-support/edit", body: {...})
+```
+
+`api_for` returns an **independent** `Api` — the configured `Embassy.api` singleton keeps using
+`config.api_key`. Access tokens never mix: the cache is keyed by `(api_base_url, api_key)`, so each
+credential exchanges and refreshes on its own. Instances are cheap (build one per call if you like);
+the cache lives in `ApiAuth`, not in the instance. Arguments are validated the same way the
+`configure` block validates its pair (present key, absolute http(s) URL), and it works before
+`.configure` — timeouts and the logger are inherited from the configured Config when there is one.
+
 ## Calling
 
 ```ruby

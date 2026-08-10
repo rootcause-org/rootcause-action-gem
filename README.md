@@ -209,6 +209,14 @@ result.field_errors # the host's per-field validation rejections on a 4xx
 result.retryable?   # transport / auth / 5xx → true; any other 4xx → false
 ```
 
+Refresh tokens are **project-pinned**: to talk to a second rootcause project, build an independent
+caller with its own credential and its own token cache (the configured singleton is untouched):
+
+```ruby
+RootCause::Embassy.api_for(api_base_url: ENV.fetch("ROOTCAUSE_API_BASE_URL"),
+                           api_key: ENV.fetch("ROOTCAUSE_SUPPORT_API_KEY"))
+```
+
 An HTTP outcome **never raises** — inspect the frozen result (`retryable?` tells a job whether to
 re-enqueue). Only a misconfiguration or bad argument raises `ArgumentError`. `api_key` is a **third,
 separate** privilege boundary: never the action `secret`, never `chat_secret`, and none falls back to

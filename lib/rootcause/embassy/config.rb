@@ -152,14 +152,10 @@ module RootCause
       # True once the API plane is wired far enough to make a call.
       def api_configured? = !blank?(api_base_url) && !blank?(api_key)
 
-      # True once chat is wired far enough to mint a token.
-      def chat_configured? = !blank?(chat_secret) && !blank?(chat_project)
-
-      private
-
       # The API plane is opt-in: an Embassy that sets neither attribute validates exactly as before.
       # Once ONE of them is set the deployment intends API calls, so a half-wired one is a boot-time
-      # mistake rather than a first-call surprise in a background job.
+      # mistake rather than a first-call surprise in a background job. Public because Api.for
+      # validates a per-project credential pair through the very same rules.
       def validate_api!
         return if blank?(api_base_url) && blank?(api_key)
 
@@ -169,6 +165,11 @@ module RootCause
 
         raise ArgumentError, "RootCause::Embassy: api_base_url must be an absolute http(s) URL"
       end
+
+      # True once chat is wired far enough to mint a token.
+      def chat_configured? = !blank?(chat_secret) && !blank?(chat_project)
+
+      private
 
       # Chat is opt-in: an Embassy that sets none of the chat attributes validates exactly as before.
       # Once ANY of them is set the deployment intends chat, so a half-wired one is a boot-time

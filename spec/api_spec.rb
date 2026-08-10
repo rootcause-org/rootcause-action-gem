@@ -192,6 +192,73 @@ RSpec.describe RootCause::Embassy::Api do
     end
   end
 
+  describe ".api_for (a second project's credential)" do
+    # rootcause refresh tokens are project-pinned; an app spanning several projects holds one each.
+    let(:other_key) { "rcor_support_project_credential" }
+
+    def configure!
+      RootCause::Embassy.configure do |c|
+        c.secret = Wire::SECRET
+        c.fetch_url = Wire::FETCH_URL
+        c.logger = nil
+        c.api_base_url = Wire::API_BASE_URL
+        c.api_key = Wire::REFRESH_KEY
+      end
+    end
+
+    it "returns a working, independent client that leaves the singleton alone" do
+      configure!
+      Wire.stub_token(access_token: "rcoa_support")
+      stub_call(method: :post)
+
+      other = RootCause::Embassy.api_for(api_base_url: Wire::API_BASE_URL, api_key: other_key)
+      expect(other).to be_a(described_class)
+      expect(other).not_to be(RootCause::Embassy.api)
+      expect(other.post(path, body: {})).to be_ok
+
+      expect(WebMock).to have_requested(:post, Wire::TOKEN_URL)
+        .with(body: hash_including("refresh_token" => other_key))
+      expect(RootCause::Embassy.config.api_key).to eq(Wire::REFRESH_KEY)
+    end
+
+    it "caches its access token separately from the singleton's" do
+      configure!
+      stub_call(method: :get)
+
+      Wire.stub_token(access_token: "rcoa_singleton")
+      RootCause::Embassy.api.get(path)
+      Wire.stub_token(access_token: "rcoa_other")
+      other = RootCause::Embassy.api_for(api_base_url: Wire::API_BASE_URL, api_key: other_key)
+      2.times { other.get(path) }
+
+      # One exchange per credential — neither reused the other's token.
+      expect(WebMock).to have_requested(:post, Wire::TOKEN_URL).twice
+      expect(WebMock).to have_requested(:get, url).with(headers: {"Authorization" => "Bearer rcoa_singleton"}).once
+      expect(WebMock).to have_requested(:get, url).with(headers: {"Authorization" => "Bearer rcoa_other"}).twice
+    end
+
+    it "works before .configure and inherits the configured timeouts/logger after it" do
+      unconfigured = RootCause::Embassy.api_for(api_base_url: Wire::API_BASE_URL, api_key: "static-bearer")
+      Wire.stub_token
+      stub_call(method: :get)
+      expect(unconfigured.get(path)).to be_ok
+
+      configure!
+      RootCause::Embassy.config.http_read_timeout = 42
+      inherited = RootCause::Embassy.api_for(api_base_url: Wire::API_BASE_URL, api_key: other_key)
+      expect(inherited.instance_variable_get(:@config).http_read_timeout).to eq(42)
+    end
+
+    it "validates its arguments exactly as the configure block does" do
+      expect { RootCause::Embassy.api_for(api_base_url: Wire::API_BASE_URL, api_key: "") }
+        .to raise_error(ArgumentError, /api_key is required/)
+      expect { RootCause::Embassy.api_for(api_base_url: nil, api_key: other_key) }
+        .to raise_error(ArgumentError, /api_base_url is required/)
+      expect { RootCause::Embassy.api_for(api_base_url: "rootcause.test", api_key: other_key) }
+        .to raise_error(ArgumentError, /absolute http\(s\) URL/)
+    end
+  end
+
   describe "configuration" do
     it "is reachable as Embassy.api once configured, sharing the config" do
       RootCause::Embassy.configure do |c|

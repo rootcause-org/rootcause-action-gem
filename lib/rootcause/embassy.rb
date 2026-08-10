@@ -71,6 +71,16 @@ module RootCause
         @api || raise("RootCause::Embassy is not configured — call .configure first")
       end
 
+      # A caller for ANOTHER rootcause project: refresh tokens are project-pinned,
+      # so an app spanning several projects holds one credential each. The returned
+      # Api is independent of the configured singleton (which stays on
+      # `config.api_key`) and caches its access token separately, keyed by
+      # (api_base_url, api_key). Cheap to build per call; also works before
+      # `.configure` (timeouts/logger then fall back to Config defaults).
+      def api_for(api_base_url:, api_key:)
+        Api.for(api_base_url: api_base_url, api_key: api_key, template: @config)
+      end
+
       # Outbound trigger: ask rootcause to analyze something and get an analysis_id
       # back to persist alongside your resource. See Client#start_analysis.
       def start_analysis(...)
