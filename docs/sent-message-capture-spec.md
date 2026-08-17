@@ -35,7 +35,7 @@ RootCause::Embassy.capture_sent_message(
   session_id:,       # String, required — same session handle used in start_analysis
   proposed_body: nil,# String — what rootcause proposed (for the delta); omit if unknown
   sender: nil,       # String — who sent it (agent label/name)
-  metadata: {}       # Hash — correlation (e.g. { resource_type:, resource_id: }); KEYS logged, never values
+  metadata: {}       # Hash — EXACTLY { resource_type:, resource_id: }, both Strings; KEYS logged, never values
 )
 ```
 
@@ -67,6 +67,11 @@ host already enforces for the analysis trigger). Body:
   so the host joins this sent message to every analysis run of that session.
 - `proposed` may be absent (host then treats every human reply as pure signal).
 - `type` discriminator = `"sent_message"` (future-proofs the endpoint).
+- **`metadata` is NOT free-form here.** Unlike the analysis trigger's opaque bag, this route's
+  metadata is exactly `{resource_type, resource_id}`, both **strings** — the host strict-decodes it
+  (unknown field → `400`) and uses `resource_id` as the thread id. This is the general rule for the
+  trigger direction: **`/analyses/*` routes are strict; the action/result direction is
+  tolerant-inbound.**
 
 ## 4. Host endpoint (what the gem targets — see host spec for the build)
 

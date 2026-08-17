@@ -152,7 +152,6 @@ module Wire
         {"kind" => "widget", "body_markdown" => "widget detail", "body_html" => "<p>widget</p>"}
       ],
       "actions" => [],
-      "reasoning_steps" => [],
       "attachments" => [],
       "decline" => nil,
       "nonce" => "result-nonce-#{rand(1_000_000)}",

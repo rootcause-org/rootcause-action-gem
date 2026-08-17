@@ -69,10 +69,17 @@ RSpec.describe RootCause::Embassy::ResultReceiver do
     expect(handle(Wire.result(issued_at: (Time.now.utc - 3600).iso8601)).status).to eq(409)
   end
 
-  it "rejects a duplicate nonce within the window with 409" do
-    payload = Wire.result(nonce: "fixed")
+  it "acks a duplicate nonce within the window WITHOUT re-dispatching (host nonce = run_id)" do
+    payload = Wire.result(analysis_id: "run-dup", nonce: "fixed")
     expect(handle(payload).status).to eq(200)
-    expect(handle(payload).status).to eq(409)
+    SpecResultHandler.reset!
+
+    reply = handle(payload)
+    expect(reply.status).to eq(200)
+    expect(body_of(reply)).to eq({"ok" => true})
+    expect(RootCause::Embassy::Signature.valid?(reply.signature, reply.body, secret: Wire::SECRET)).to be(true)
+    # The redelivery never reached the handler — it was deduped, not reprocessed.
+    expect(SpecResultHandler.store).to be_empty
   end
 
   it "redelivery with a FRESH nonce dispatches again → handler upserts, not duplicates" do
@@ -81,6 +88,17 @@ RSpec.describe RootCause::Embassy::ResultReceiver do
     handle(Wire.result(analysis_id: "run-7", nonce: "n2"))
     expect(SpecResultHandler.store.size).to eq(1)
     expect(SpecResultHandler.store).to have_key("run-7")
+  end
+
+  it "releases the nonce when dispatch fails so the host's redelivery is processed" do
+    config.result_handler = "SpecBoomHandler"
+    payload = Wire.result(analysis_id: "run-boom", nonce: "same-run-id")
+    expect(handle(payload).status).to eq(500)
+
+    # Same nonce, but the failed delivery was never processed → not a duplicate.
+    config.result_handler = "SpecResultHandler"
+    expect(handle(payload).status).to eq(200)
+    expect(SpecResultHandler.store).to have_key("run-boom")
   end
 
   it "exposes the host-managed session_id on the dispatched result" do

@@ -278,6 +278,29 @@ RSpec.describe RootCause::Embassy::Runner do
     end
   end
 
+  # The host gives the invocation one 25s shot with no retry, so the gem bounds
+  # fetch + execute together rather than execution alone.
+  describe "total deadline" do
+    # Execute backstop deliberately LONGER than the total budget, so only the
+    # total deadline can be what fires.
+    let(:config) { Wire.config(total_deadline: 0.2, timeout: 5) }
+
+    it "returns a signed timeout-style failure when the whole invocation overruns" do
+      script = "sleep 2\n{ done: true }"
+      Wire.stub_fetch(script: script)
+
+      reply = handle(Wire.invocation(script: script))
+
+      expect(reply.status).to eq(200)
+      expect(RootCause::Embassy::Signature.valid?(reply.signature, reply.body, secret: Wire::SECRET)).to be(true)
+      payload = body_of(reply)
+      expect(payload["ok"]).to be(false)
+      expect(payload.dig("error", "class")).to eq("Timeout::Error")
+      expect(payload.dig("error", "message")).to include("total deadline")
+      expect(payload["return_value"]).to be_nil
+    end
+  end
+
   describe "logging" do
     let(:logger) { instance_double(Logger, info: nil, warn: nil) }
     let(:config) { Wire.config(logger: logger) }

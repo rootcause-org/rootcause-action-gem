@@ -7,14 +7,27 @@ module RootCause
     # contract so all three products serialize identically. A frozen, symbol-keyed
     # value object — the handler reads a stable, immutable bag.
     #
-    # The SPEC §1 human-in-the-loop invariant is preserved by the field split:
-    # draft / note / reasoning_steps / attachments are informational (safe to
-    # auto-burn into the customer's records); `actions[]` are vetted side-effects
-    # rootcause PROPOSES — the customer renders them for a human to click, and they
-    # ride back through the gem's existing invocation route. The gem never auto-runs
-    # them, so no "autonomous action" feature is needed. Each action is a pass-through
-    # hash with { id (action_run uuid), slug (registry action id), label, description,
+    # The human-in-the-loop invariant is preserved by the field split:
+    # draft / note / attachments / questions are informational (safe to auto-burn
+    # into the customer's records); `actions[]` are vetted side-effects rootcause
+    # PROPOSES — the customer renders them for a human to click, and they ride back
+    # through the gem's existing invocation route. The gem never auto-runs them, so
+    # no "autonomous action" feature is needed. Each action is a pass-through hash
+    # with { id (action_run uuid), slug (registry action id), label, description,
     # url (single-use token), color }; read fields via symbol keys.
+    #
+    # `executed_actions[]` is the OPPOSITE of `actions[]` and must never be rendered
+    # as a confirm button: those writes ALREADY HAPPENED mid-loop (host autonomy gate
+    # was open), so the customer app renders them as outcomes/history. Each is
+    # { id (action_run uuid), slug, label, ok (did the write succeed), summary
+    # (markdown outcome) }.
+    #
+    # `questions[]` are the run's clarifying questions: render them in the app's own
+    # UI and POST the human's answers back over `capture_sent_message` with the same
+    # `session_id`. `delete_ids` (wire key `delete` — a reserved word in Ruby, hence
+    # the accessor rename) retracts previously delivered NOTES by their `key`:
+    # idempotent (an unknown key is a no-op), may ride alongside a placement, never
+    # alongside a decline. A delete-only result places nothing.
     #
     # `draft` and `note` are surfaced as **markdown strings**, not the raw nested
     # nodes: `draft` is the drafted answer's `body_markdown`; `note` is the SUMMARY
@@ -30,7 +43,7 @@ module RootCause
     # follow-up then sends only the new message (the host keeps prior history).
     class Result
       attr_reader :analysis_id, :session_id, :metadata, :draft, :note, :actions,
-        :reasoning_steps, :attachments, :decline
+        :executed_actions, :questions, :delete_ids, :attachments, :decline
 
       # The note `key` that carries the human-facing summary. The host
       # (webhook.CallbackNote) discriminates notes by `key` — NoteKeySummary; other
@@ -38,14 +51,17 @@ module RootCause
       # and never burned into `note`.
       SUMMARY_KEY = "summary"
 
-      def initialize(analysis_id:, session_id:, metadata:, draft:, note:, actions:, reasoning_steps:, attachments:, decline:)
+      def initialize(analysis_id:, session_id:, metadata:, draft:, note:, actions:,
+        executed_actions:, questions:, delete_ids:, attachments:, decline:)
         @analysis_id = analysis_id
         @session_id = session_id
         @metadata = metadata
         @draft = draft
         @note = note
         @actions = actions
-        @reasoning_steps = reasoning_steps
+        @executed_actions = executed_actions
+        @questions = questions
+        @delete_ids = delete_ids
         @attachments = attachments
         @decline = decline
         freeze
@@ -68,7 +84,9 @@ module RootCause
           draft: markdown_of(data[:draft]),
           note: markdown_of(summary_note(data[:notes])),
           actions: data[:actions] || EMPTY_ARRAY,
-          reasoning_steps: data[:reasoning_steps] || EMPTY_ARRAY,
+          executed_actions: data[:executed_actions] || EMPTY_ARRAY,
+          questions: data[:questions] || EMPTY_ARRAY,
+          delete_ids: data[:delete] || EMPTY_ARRAY,
           attachments: data[:attachments] || EMPTY_ARRAY,
           decline: data[:decline]
         )

@@ -107,7 +107,8 @@ RootCause::Embassy.configure do |c|
   c.secret    = ENV.fetch("ROOTCAUSE_ACTION_SECRET")    # reverse-channel HMAC secret (per project)
   c.mount_at  = "/rootcause/action"                     # the single route
   c.fetch_url = "https://<rootcause>/actions/script"    # script-by-digest endpoint
-  c.timeout   = 20                                       # hard per-run timeout (seconds)
+  c.timeout   = 20                                       # hard per-EXECUTION timeout (seconds)
+  c.total_deadline = 22                                  # whole-invocation budget: fetch + execute
   c.require_tenant_context = true                        # REQUIRED on tenant-enabled projects
   c.logger    = Rails.logger
 end
@@ -160,6 +161,16 @@ The gem **verifies `sha256(script) == digest`** before caching or running. Unkno
 Rules: sign-then-send / verify-on-raw; constant-time compare; reject on bad signature, stale
 `issued_at`, seen `nonce`, or digest mismatch. Oversize output is truncated (inline JSON only — no
 files / download URLs in v1).
+
+**One deadline for the whole invocation.** The host waits ~25s, one shot, **no retry**, so the gem
+bounds fetch **and** execution together under `total_deadline` (22s); `timeout` (20s) stays the
+execute backstop inside it. A breach returns the same signed `Timeout::Error` failure envelope an
+over-long body produces — never a bare transport timeout on the host side.
+
+**Replay semantics differ by direction.** This invocation route rejects a seen `nonce` (409). The
+**result** route ([async-analysis-spec](docs/async-analysis-spec.md)) does not: rootcause
+sends a stable `nonce = run_id` across redeliveries so the Embassy dedupes, and a duplicate there is an
+idempotent signed `200 {"ok":true}` ack. A stale `issued_at` is a 409 on both.
 
 Flat projects omit all three tenant fields so their signed bytes stay backward-compatible. A bound
 invocation requires `tenant_id` and `tenant_slug` together; `tenant_scope_value` may be absent/empty.
@@ -313,12 +324,12 @@ rootcause-embassy-ruby/
 | Area | What |
 |---|---|
 | **Signature** | `Sign`/`Verify` round-trip; constant-time; forged/missing signature rejected. |
-| **Replay** | `issued_at` outside ±5 min rejected; repeated `nonce` rejected; fresh nonce accepted. |
+| **Replay** | `issued_at` outside ±5 min rejected; repeated `nonce` rejected on the invocation route, **acked idempotently** on the result route; fresh nonce accepted. |
 | **Schema** | each type (`string`/`integer`/`number`/`boolean`/`string[]`); missing required → reject; wrong type → reject. |
 | **Resolve-by-digest** | cache hit uses cached body; cache miss → fetch + verify; **digest mismatch → hard refuse** (never runs). |
 | **Param binding is data** | a param value `"; system('x')"` cannot execute — it is an inert string. |
 | **Tenant trust** | signed context reaches `RC_TENANT_*`; tampering fails signature; partial/malformed bound fields refuse; flat runs clear tenant env; tenant selector params refuse. |
-| **Timeout** | a hanging body is killed by the hard timeout and returns a structured error. |
+| **Timeout** | a hanging body is killed by the hard timeout and returns a structured error; an invocation exceeding `total_deadline` returns the same signed timeout-style failure. |
 | **Errors** | any raised exception → structured `error{class, message, backtrace}`; return value must be JSON-able (non-serializable → error). |
 | **Logging** | logs `action_id`/`digest`/param **keys**/`ok`/`duration_ms`; never the secret or param values. |
 

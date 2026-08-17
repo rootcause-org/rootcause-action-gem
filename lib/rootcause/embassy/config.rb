@@ -19,8 +19,18 @@ module RootCause
       # Script-by-digest endpoint on the rootcause host, hit on a cache miss.
       attr_accessor :fetch_url
 
-      # Hard per-run wall-clock timeout in seconds (Timeout backstop).
+      # Hard per-EXECUTION wall-clock timeout in seconds (Timeout backstop around the
+      # action body only). Must stay under total_deadline to be the one that fires.
       attr_accessor :timeout
+
+      # Hard wall-clock budget in seconds for the WHOLE invocation — signature,
+      # replay, schema, script fetch AND execution. The host waits 25s for the
+      # invocation and never retries, so an Embassy that spends its budget on a slow
+      # script fetch would leave the host with a bare transport timeout instead of a
+      # signed answer. Default 22s: under the host's wait, above the 20s execute
+      # backstop, so a slow BODY still reports as an execute timeout and only
+      # fetch+execute overrun trips this.
+      attr_accessor :total_deadline
 
       # Tenant-enabled Embassy deployments set this true so even a validly signed invocation without
       # host tenant context is refused before script resolution. Flat deployments leave it false.
@@ -113,6 +123,7 @@ module RootCause
       def initialize
         @mount_at = "/rootcause/action"
         @timeout = 20
+        @total_deadline = 22
         @require_tenant_context = false
         @clock_skew = 300
         @cache_dir = "tmp/rootcause/actions"
@@ -141,6 +152,11 @@ module RootCause
             "(#{fetch_url}) — set ROOTCAUSE_FETCH_URL to the host's /actions/script endpoint"
         end
         raise ArgumentError, "RootCause::Embassy: timeout must be positive" unless timeout.to_f > 0
+        unless total_deadline.to_f > timeout.to_f
+          raise ArgumentError,
+            "RootCause::Embassy: total_deadline (#{total_deadline}) must exceed timeout (#{timeout}) — " \
+            "the execute backstop has to fire inside the invocation budget, not after it"
+        end
         unless [true, false].include?(require_tenant_context)
           raise ArgumentError, "RootCause::Embassy: require_tenant_context must be true or false"
         end

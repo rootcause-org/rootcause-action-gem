@@ -65,6 +65,55 @@ RSpec.describe RootCause::Embassy::Client do
     ).to have_been_made
   end
 
+  describe "principal" do
+    it "sends exactly the host's field names, omitting the nils" do
+      Wire.stub_trigger
+      client.start_analysis(
+        subject: "s", body: "b",
+        principal: {kind: "probackup_user", external_id: "u-42", asserted_by: "intercom", tenant_hint: nil}
+      )
+
+      expect(
+        a_request(:post, Wire::TRIGGER_URL).with { |req|
+          JSON.parse(req.body)["principal"] == {
+            "kind" => "probackup_user", "external_id" => "u-42", "asserted_by" => "intercom"
+          }
+        }
+      ).to have_been_made
+    end
+
+    it "is omitted entirely when nil (the trigger route strict-decodes)" do
+      Wire.stub_trigger
+      client.start_analysis(subject: "s", body: "b")
+
+      expect(
+        a_request(:post, Wire::TRIGGER_URL).with { |req| !JSON.parse(req.body).key?("principal") }
+      ).to have_been_made
+    end
+
+    it "raises before sending when the identity core is incomplete" do
+      Wire.stub_trigger
+      expect {
+        client.start_analysis(subject: "s", body: "b", principal: {kind: "probackup_user"})
+      }.to raise_error(ArgumentError, /external_id/)
+      expect(a_request(:post, Wire::TRIGGER_URL)).not_to have_been_made
+    end
+
+    it "drops unknown fields rather than letting the host 400 them" do
+      Wire.stub_trigger
+      client.start_analysis(
+        subject: "s", body: "b",
+        principal: {"kind" => "probackup_user", "external_id" => "u-1", "role" => "admin"}
+      )
+
+      expect(
+        a_request(:post, Wire::TRIGGER_URL).with { |req|
+          !JSON.parse(req.body)["principal"].key?("role")
+        }
+      ).to have_been_made
+    end
+  end
+
   it "omits session_id from the trigger body on the first turn (absent/blank)" do
     Wire.stub_trigger
 

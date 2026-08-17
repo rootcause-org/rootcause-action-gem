@@ -54,7 +54,16 @@ RSpec.describe RootCause::Embassy::Config do
     expect(cfg.mount_at).to eq("/rootcause/action")
     expect(cfg.clock_skew).to eq(300)
     expect(cfg.timeout).to eq(20)
+    expect(cfg.total_deadline).to eq(22)
     expect(cfg.require_tenant_context).to be(false)
+  end
+
+  it "rejects a total_deadline that does not exceed the execute timeout" do
+    cfg = described_class.new
+    cfg.secret = "s"
+    cfg.fetch_url = "https://x"
+    cfg.timeout = 30 # raised past the default budget without raising the budget
+    expect { cfg.validate! }.to raise_error(ArgumentError, /total_deadline/)
   end
 
   it "rejects a non-boolean tenant-context requirement" do

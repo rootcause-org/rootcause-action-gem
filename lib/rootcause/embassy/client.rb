@@ -35,10 +35,18 @@ module RootCause
       #   present, this turn continues that conversation — send ONLY the new
       #   subject/body, never prior history (the host keeps it). Opaque to the gem.
       # @param tenant [String, nil] optional rootcause tenant slug for tenant-enabled projects.
+      # @param principal [Hash, nil] optional identity assertion about WHO this
+      #   trigger is on behalf of — `{kind:, external_id:, asserted_by: nil,
+      #   assurance: nil, tenant_hint: nil, source_metadata: nil}`. The customer app
+      #   asserts it from its OWN authenticated session; it must never be derived from
+      #   model output or from anything the end user can set. Dormant unless the
+      #   project declares `scope_claims`, in which case the host resolves it into
+      #   typed data-plane claims. Omit entirely when there is no authenticated user.
       # @return [Analysis]
       # @raise [TriggerError] non-2xx, malformed response, or transport failure
-      # @raise [ArgumentError] missing trigger_url, or an over-cap/malformed attachment
-      def start_analysis(subject:, body:, attachments: [], metadata: {}, session_id: nil, tenant: nil)
+      # @raise [ArgumentError] missing trigger_url, an over-cap/malformed attachment,
+      #   or a principal without both kind and external_id
+      def start_analysis(subject:, body:, attachments: [], metadata: {}, session_id: nil, tenant: nil, principal: nil)
         url = @config.trigger_url
         raise ArgumentError, "RootCause::Embassy: trigger_url is not configured" if blank?(url)
 
@@ -55,6 +63,7 @@ module RootCause
         # mints one, returned in the 202 below.
         payload["session_id"] = session_id unless blank?(session_id)
         payload["tenant"] = tenant unless blank?(tenant)
+        payload["principal"] = normalize_principal(principal) unless principal.nil?
         raw = JSON.generate(payload)
 
         response = post(url, raw, transport_error: TriggerError, label: "analysis trigger")
@@ -73,7 +82,10 @@ module RootCause
       # @param session_id [String] the same handle passed to start_analysis (required)
       # @param proposed_body [String, nil] what rootcause proposed; omit if unknown
       # @param sender [String, nil] who sent it (agent label/name)
-      # @param metadata [Hash] correlation (keys logged, values never)
+      # @param metadata [Hash] correlation — NOT free-form here (unlike the trigger's
+      #   metadata): the host strict-decodes exactly `{resource_type, resource_id}`,
+      #   both STRINGS, and any other key is a 400. `resource_id` becomes the host's
+      #   thread id. Keys are logged, values never.
       # @return [SentMessage] frozen, `ok: true` (with the host's id when echoed)
       # @raise [SentMessageError] non-2xx, malformed response, or transport failure
       # @raise [ArgumentError] missing sent_message_url, or blank sent_body/session_id
@@ -105,6 +117,28 @@ module RootCause
       end
 
       private
+
+      # Fields the host's ProjectPrincipal accepts, in wire spelling. The trigger
+      # route strict-decodes (unknown field → 400), so anything else is dropped here
+      # rather than turned into a 400 the caller can't read, and a nil is OMITTED
+      # rather than sent as null.
+      PRINCIPAL_FIELDS = %w[kind external_id asserted_by assurance tenant_hint source_metadata].freeze
+
+      # The host rejects a partial assertion (kind without external_id or vice-versa)
+      # because it would silently resolve to zero claims and degrade to tenant-only
+      # scope. Fail here instead, before the round-trip.
+      def normalize_principal(principal)
+        raise ArgumentError, "principal must be an object" unless principal.is_a?(Hash)
+
+        fields = principal.each_with_object({}) { |(k, v), h| h[k.to_s] = v }
+        missing = %w[kind external_id].reject { |f| present?(fields[f]) }
+        raise ArgumentError, "principal requires #{missing.join(" and ")}" unless missing.empty?
+
+        PRINCIPAL_FIELDS.each_with_object({}) do |field, out|
+          value = fields[field]
+          out[field] = value unless value.nil?
+        end
+      end
 
       # Validate + canonicalize attachments. Decode each (strict base64) to measure
       # the cap and prove it is well-formed; fail loud BEFORE sending so the caller

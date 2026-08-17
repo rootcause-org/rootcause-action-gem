@@ -29,13 +29,18 @@ gem "rootcause-embassy"
 RootCause::Embassy.configure do |c|
   c.secret    = ENV.fetch("ROOTCAUSE_ACTION_SECRET") # reverse-channel HMAC secret (per project)
   c.fetch_url = "https://<rootcause>/actions/script" # script-by-digest endpoint
-  c.timeout   = 20                                   # hard per-run timeout (seconds)
+  c.timeout   = 20                                   # hard per-EXECUTION timeout (seconds)
+  c.total_deadline = 22                              # budget for the WHOLE invocation (fetch + execute)
   c.require_tenant_context = true                    # REQUIRED on tenant-enabled projects
   c.logger    = Rails.logger
 end
 ```
 
-`configure` validates fail-closed at boot: a missing `secret` or `fetch_url` raises immediately.
+`configure` validates fail-closed at boot: a missing `secret` or `fetch_url`, or a `total_deadline`
+that does not exceed `timeout`, raises immediately. The host waits ~25s for an invocation and **never
+retries**, so the gem bounds the *whole* invocation (script fetch **and** execution) under
+`total_deadline`; `timeout` remains the execute backstop inside it. A breach returns the same signed
+`Timeout::Error` failure result an over-long body would.
 
 Tenant-enabled Embassy deployments **must** set `require_tenant_context = true`; this refuses a signed
 tenantless invocation before script resolution. Flat deployments leave its default `false` so their
@@ -68,7 +73,8 @@ edge, and run under a least-privileged DB role where feasible.
 6. **Bind + execute** — params as a frozen, symbol-keyed hash, **as data, never interpolated into
    source**; trusted tenant context is available as `RC_TENANT_ID`, `RC_TENANT_SLUG`, and
    `RC_TENANT_SCOPE_VALUE` for the duration of the action.
-7. **Hard timeout** + rescue everything → structured `error{class, message, backtrace}`.
+7. **Hard timeout** (execute backstop, inside the invocation-wide `total_deadline`) + rescue
+   everything → structured `error{class, message, backtrace}`.
 8. **Return signed JSON** — `{ ok, return_value | error, stdout, duration_ms }`. Logs `action_id`,
    `digest`, param **keys**, `ok`, `duration_ms` — never the secret or param values.
 
@@ -136,6 +142,20 @@ end
 A non-2xx / transport failure raises `RootCause::Embassy::TriggerError` (yours to retry); an
 over-cap or malformed attachment raises `ArgumentError` before anything is sent.
 
+**Who it is for** — pass `principal:` when your app knows the authenticated end user behind the
+trigger, so rootcause can scope the run's data access to them:
+
+```ruby
+principal: {kind: "probackup_user", external_id: current_user.id.to_s,
+            asserted_by: "myapp", assurance: "customer_backend_session",
+            tenant_hint: nil, source_metadata: nil} # nils are omitted from the wire
+```
+
+`kind` + `external_id` are required together (a partial assertion raises before the POST); the other
+fields are optional. Assert it from your **own authenticated session** only — never from model output,
+a URL parameter, or anything the end user can set. Omit the kwarg entirely when there is no
+authenticated user. It stays dormant unless the project declares `scope_claims` host-side.
+
 **Handle the result** — a plain class in `app/`, idempotent (rootcause **redelivers** on a lost ack):
 
 ```ruby
@@ -162,9 +182,25 @@ end
 `body_markdown`; `note` is the *summary* note's `body_markdown` (rootcause delivers `notes[]` — one
 summary note plus widget notes; the gem surfaces only the summary, whose body carries the run-trace as
 a markdown link). HTML is used only as a fallback when markdown is absent. `draft` / `note` /
-`reasoning_steps` / `attachments` are informational (safe to auto-burn); **`actions[]`** are vetted
+`attachments` / `questions` are informational (safe to auto-burn); **`actions[]`** are vetted
 side-effects rootcause *proposes* — render them for a human to click, and they ride back through the
 **invocation route**. The gem never auto-runs them.
+
+Two more lists complete the surface:
+
+- **`executed_actions[]`** — `{id:, slug:, label:, ok:, summary:}` for actions the run **already ran**
+  mid-loop (the project's autonomy gate was open). The write has happened: render them as **outcomes /
+  history, never as confirm buttons**.
+- **`questions[]`** — the run's clarifying questions. Render them in your own UI and POST the human's
+  answers back with `capture_sent_message` on the same `session_id`.
+- **`delete_ids`** — wire key `delete` (a Ruby reserved word, hence the accessor name): note `key`s the
+  run retracts. Dropping an unknown key is a no-op.
+
+**Redelivery is idempotent at the route.** rootcause sends a **stable** `nonce` (the run id) on every
+redelivery of the same result, so a duplicate inside the replay window is acked with the same signed
+`200 {"ok":true}` and is **not** dispatched twice — no 409. (A stale `issued_at` is still a 409.) If
+your handler *raises*, the delivery is refused with a signed 500 and the nonce is released, so the
+host's next redelivery does reach the handler — keep `process` idempotent.
 
 **Continue the conversation** — the host keeps the history keyed by `session_id`, so a follow-up sends
 **only the new message** (never prior turns):
@@ -297,6 +333,10 @@ The **result route** has its own nonce store with the same caveat — inject a s
 receiver = RootCause::Embassy::ResultReceiver.new(RootCause::Embassy.config, nonce_store: MyCacheStore.new)
 mount RootCause::Embassy::ResultRackApp.new(receiver: receiver) => "/rootcause/result"
 ```
+
+Give a shared **result-route** store a `delete(nonce)` too: the receiver calls it to release a nonce
+whose dispatch failed, so the host's redelivery is processed instead of acked as a duplicate. A store
+without it stays fail-closed (deduped) but loses that retry.
 
 Likewise, `capture_stdout` swaps the **process-global** `$stdout` for the duration of a run; under a
 multi-threaded server that briefly intercepts other threads' output. Set `capture_stdout = false` if

@@ -20,7 +20,9 @@ module RootCause
       # @return [Runner::Reply] a signed ack (200 ok) or a signed structured refusal
       def handle(raw_body:, signature:)
         payload = authenticate(raw_body, signature)
-        result = dispatch(payload)
+        return ack_duplicate(payload) unless fresh?(payload)
+
+        result = dispatch_or_release(payload)
         log(result)
         reply(200, {ok: true})
       rescue Error => e
@@ -31,8 +33,8 @@ module RootCause
       rescue => e
         # Fail-closed backstop. A handler exception or any unforeseen condition is a
         # signed, structured 500 — never an unsigned crash, and deliberately NOT an
-        # ack: rootcause then redelivers (with a fresh nonce), which is exactly why
-        # ResultHandler#process is documented idempotent. Message is the class only
+        # ack: the nonce is released above, so rootcause's redelivery dispatches
+        # again — which is exactly why ResultHandler#process is documented idempotent. Message is the class only
         # — an unexpected error's message may carry untrusted input.
         log_unexpected(e)
         reply(500, {ok: false, error: {class: "internal_error", message: e.class.name}})
@@ -61,14 +63,43 @@ module RootCause
         raise InvalidRequest, "body is not valid JSON"
       end
 
-      def dispatch(payload)
-        Replay.guard!(
+      # Freshness on the RESULT route is deliberately asymmetric with the invocation
+      # route: rootcause sends `nonce = run_id`, stable across redeliveries of the
+      # same result, precisely so the Embassy dedupes. A duplicate is therefore a
+      # redelivery to ack (see ack_duplicate), never a refusal. A stale `issued_at`
+      # still raises ReplayError → 409: that one bounds how long a captured body
+      # stays replayable, and no legitimate redelivery arrives outside the window.
+      def fresh?(payload)
+        Replay.fresh?(
           issued_at: payload["issued_at"],
           nonce: payload["nonce"],
           clock_skew: @config.clock_skew,
           store: @nonce_store
         )
+      end
 
+      # A redelivery inside the window: the first delivery already reached the
+      # handler, so re-dispatching would double-process. Ack it exactly like the
+      # first — same signed 200 — so the host stops retrying.
+      def ack_duplicate(payload)
+        @config.logger&.info("[rootcause-result] duplicate analysis_id=#{payload["analysis_id"]} acked (redelivery)")
+        reply(200, {ok: true})
+      end
+
+      # The nonce is consumed BEFORE dispatch (so two concurrent redeliveries can't
+      # both reach the handler). If dispatch then fails, this delivery was never
+      # processed, so give the nonce back — otherwise the host's redelivery (same
+      # nonce = run_id) would be acked as a duplicate and the result silently lost.
+      # A store without #delete keeps the dedupe and loses the retry; inject one
+      # that supports removal where that matters.
+      def dispatch_or_release(payload)
+        dispatch(payload)
+      rescue
+        @nonce_store.delete(payload["nonce"].to_s) if @nonce_store.respond_to?(:delete)
+        raise
+      end
+
+      def dispatch(payload)
         result = Result.from_payload(payload)
         handler = build_handler
         # Inline, under the configured timeout — keep handlers a quick write.

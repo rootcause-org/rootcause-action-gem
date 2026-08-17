@@ -14,14 +14,30 @@ module RootCause
     # turn bounds how long a nonce must be remembered: a nonce older than the full
     # window (2 * clock_skew) is already rejected by the window check, so the
     # store only needs to retain nonces that briefly.
+    #
+    # Both checks are enforced by `guard!` (the invocation route). The result route
+    # calls `fresh?` instead: same window enforcement, but a seen nonce comes back
+    # as `false` so the caller can ack a redelivery instead of erroring.
     module Replay
       module_function
 
       # @param store [#add?] nonce store; `add?(nonce, ttl:)` returns true iff the
       #   nonce was newly recorded (i.e. unseen).
       def guard!(issued_at:, nonce:, clock_skew:, store:, now: Time.now.utc)
+        raise ReplayError, "nonce already seen" unless fresh?(
+          issued_at: issued_at, nonce: nonce, clock_skew: clock_skew, store: store, now: now
+        )
+      end
+
+      # Window check as usual (stale → ReplayError), but a duplicate nonce is
+      # REPORTED, not raised: false means "authentic and in-window, already seen".
+      # The result route needs that distinction — the host deliberately sends a
+      # stable `nonce = run_id` across redeliveries of the SAME result, so a
+      # duplicate there is a redelivery to ack idempotently, not an attack. The
+      # invocation route wants the raise, and gets it via guard!.
+      def fresh?(issued_at:, nonce:, clock_skew:, store:, now: Time.now.utc)
         check_window!(issued_at, clock_skew, now)
-        check_nonce!(nonce, store, clock_skew)
+        record_nonce(nonce, store, clock_skew)
       end
 
       def check_window!(issued_at, clock_skew, now)
@@ -32,14 +48,12 @@ module RootCause
         end
       end
 
-      def check_nonce!(nonce, store, clock_skew)
+      # @return [Boolean] true iff the nonce was unseen (and is now recorded).
+      def record_nonce(nonce, store, clock_skew)
         raise ReplayError, "nonce missing" if nonce.nil? || nonce.to_s.empty?
 
         # Retain for the full window; after that the window check alone refuses.
-        ttl = (clock_skew * 2) + 1
-        unless store.add?(nonce.to_s, ttl: ttl)
-          raise ReplayError, "nonce already seen"
-        end
+        store.add?(nonce.to_s, ttl: (clock_skew * 2) + 1)
       end
 
       def parse_time(value)
@@ -68,6 +82,13 @@ module RootCause
             @expiries[nonce] = now + ttl
             true
           end
+        end
+
+        # Forget `nonce` so it can be accepted again. Only the result route uses
+        # this, to un-consume a nonce whose dispatch failed (see ResultReceiver).
+        def delete(nonce)
+          @mutex.synchronize { @expiries.delete(nonce) }
+          nil
         end
 
         private

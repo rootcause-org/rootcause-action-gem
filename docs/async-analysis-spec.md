@@ -146,11 +146,13 @@ result.session_id      # String   — host-managed conversation key; persist + f
 result.metadata        # Hash      — your bag, echoed back verbatim (symbol keys)
 result.draft           # String    — the drafted answer, MARKDOWN (or nil)
 result.note            # String    — the SUMMARY note, MARKDOWN (or nil); see §2.2
-result.actions         # [ { id:, label:, description:, url:, color: } ]  (human-gated; see §4)
-result.reasoning_steps # [String]
-result.attachments     # [ { filename:, mime_type:, content_base64: } ]
-result.decline         # { reason: } or nil
-result.ok?             # decline.nil?
+result.actions          # [ { id:, slug:, label:, description:, url:, color: } ]  PROPOSED (human-gated; §4)
+result.executed_actions # [ { id:, slug:, label:, ok:, summary: } ]  ALREADY RUN — outcomes, never buttons (§4)
+result.questions        # [ { … } ]  clarifying questions; answer via capture_sent_message, same session_id
+result.delete_ids       # [String]   note keys the run retracts (wire key `delete`)
+result.attachments      # [ { filename:, mime_type:, content_base64: } ]
+result.decline          # { reason: } or nil
+result.ok?              # decline.nil?
 ```
 
 Field names are taken **verbatim** from rootcause's `webhook.CallbackPayload` and ReplyPen's contract so
@@ -206,10 +208,24 @@ body), constant-time compare, sign-then-send / verify-on-raw — identical to SP
   "attachments": [ { "filename": "error.log", "mime_type": "text/plain", "content_base64": "…" } ],
   "metadata":    { "resource_type": "SupportTicket", "resource_id": 42 }, // opaque, echoed back
   "session_id":  "uuid",          // OPTIONAL — present only on a follow-up; omitted on turn 1
+  "tenant":      "acme",          // OPTIONAL — tenant slug on tenant-enabled projects
+  "principal":   {                // OPTIONAL — who the trigger is on behalf of
+    "kind": "probackup_user", "external_id": "u-42",
+    "asserted_by": "myapp", "assurance": "customer_backend_session",
+    "tenant_hint": "acme", "source_metadata": { "conversation_id": "…" }
+  },
   "nonce":       "uuid",
   "issued_at":   "2026-06-04T10:00:00Z" // ±5 min window
 }
 ```
+
+**The trigger direction is STRICT** — the host decodes `/analyses/*` with unknown fields rejected, so an
+extra key is a `400`. `principal` therefore carries exactly the six field names above and the gem omits
+any that are nil; `kind` + `external_id` are required together (a partial assertion resolves to zero
+claims and would silently degrade to tenant-only scope, so the gem raises `ArgumentError` before the
+POST). It is dormant unless the project declares `scope_claims`. Assert it from the customer app's own
+authenticated session — **never from model output** or anything the end user controls. The result
+direction (rootcause → gem) is tolerant-inbound: unknown fields are ignored, not refused.
 
 Response `202`: `{ "analysis_id": "uuid", "session_id": "uuid", "status": "queued" }`. The host **mints**
 `session_id` on the first turn and **echoes** the same one on follow-ups; the gem surfaces it as
@@ -229,8 +245,10 @@ plus `analysis_id`, `session_id`, `nonce`, `issued_at`:
     { "kind": "summary", "body_markdown": "… [run trace](https://…)" }, // → result.note (markdown)
     { "kind": "widget",  "body_markdown": "…" }                     // not surfaced
   ],
-  "actions":     [ { "id": "…", "label": "…", "url": "…" } ],
-  "reasoning_steps": [ "…" ],
+  "actions":     [ { "id": "…", "slug": "…", "label": "…", "url": "…" } ],   // PROPOSED
+  "executed_actions": [ { "id": "…", "slug": "…", "label": "…", "ok": true, "summary": "…" } ], // ALREADY RUN
+  "questions":   [ { "…": "…" } ],
+  "delete":      [ "summary" ],                                    // → result.delete_ids
   "attachments": [ { "filename": "…", "mime_type": "…", "content_base64": "…" } ],
   "decline":     null,
   "nonce":       "uuid",
@@ -245,22 +263,32 @@ The gem verifies signature + replay, then dispatches to `result_handler` (which 
 
 The split that keeps the SPEC §1 invariant intact:
 
-- **`draft` / `note` / `reasoning_steps` / `attachments`** — informational analysis output → safe to
+- **`draft` / `note` / `attachments` / `questions`** — informational analysis output → safe to
   **auto-burn** into the customer's records. No gate.
 - **`actions[]`** — vetted side-effects rootcause *proposes*. Each is a `{ label, description, url }`
   pointing at rootcause's single-use, expiring confirm page. The customer **renders** them (a human
   clicks) → rootcause executes via the gem's **existing invocation route**. The gem never auto-runs them.
+- **`executed_actions[]`** — the opposite: writes the run **already performed** mid-loop under the
+  project's host-side autonomy gate. Nothing is pending, so render them as **outcomes/history —
+  never as confirm buttons**. (Restating the invariants: no embassy auto-executes an action, and no
+  principal ever originates from model output.)
 
 So one result can both fill a draft *and* surface approve-buttons, cleanly separated by field. No
 "autonomous action" feature is needed.
 
 ## 5. Idempotency & fail-closed
 
-- **Result redelivery is when-not-if.** If the gem's ack is lost, rootcause retries. The replay-guard
-  (±5 min window + nonce) rejects same-window duplicates; a retry *outside* the window is a fresh nonce
-  and **will** dispatch again. Therefore **`ResultHandler#process` must be idempotent** — upsert by
-  `metadata` (or `analysis_id`), never blind-insert. Documented loudly, enforced by example.
-- **Fail closed** (mirrors SPEC §3): bad signature, stale/duplicate nonce, missing required fields,
+- **Result redelivery is when-not-if, and the route is idempotent.** rootcause sends a **stable
+  `nonce` (the run id)** on every redelivery of the same result — deliberately, so the Embassy dedupes.
+  A duplicate nonce inside the window is therefore acked with the same signed `200 {"ok":true}` and is
+  **not** dispatched twice; it is *not* a 409. (The **invocation** route keeps full replay semantics: a
+  duplicate nonce there is a 409.)
+- **A stale `issued_at` is still a 409** on both routes — the window is what bounds how long a captured
+  body stays replayable, and no legitimate redelivery arrives outside it.
+- **A failed dispatch releases the nonce.** A raising handler → signed 500, no ack, nonce released, so
+  the host's redelivery (same nonce) *does* reach the handler. **`ResultHandler#process` must still be
+  idempotent** — upsert by `analysis_id` (or `metadata`), never blind-insert.
+- **Fail closed** (mirrors SPEC §3): bad signature, stale nonce, missing required fields,
   unconfigured `result_handler` → refuse, signed structured error, log it.
 - **Trigger failures** (`start_analysis`): non-2xx / timeout → raise a `RootCause::Embassy::TriggerError`;
   the caller decides whether to retry (the call is the customer's, so no silent swallow).
@@ -302,9 +330,9 @@ duplicated.
 
 | Area | What |
 |---|---|
-| **Trigger** | builds the documented body; signs correctly; parses `analysis_id`; non-2xx → `TriggerError`; over-cap attachment → raises pre-send. |
-| **Result route** | sign round-trip; forged/missing signature rejected; stale/duplicate nonce rejected; dispatches to handler; returns signed ack. |
-| **Idempotency** | a redelivered result (fresh nonce) dispatches again → example handler upserts, not duplicates. |
+| **Trigger** | builds the documented body; signs correctly; parses `analysis_id`; non-2xx → `TriggerError`; over-cap attachment → raises pre-send; `principal` sends exact field names, omits nils, raises on a partial assertion. |
+| **Result route** | sign round-trip; forged/missing signature rejected; stale `issued_at` → 409; dispatches to handler; returns signed ack. |
+| **Idempotency** | duplicate nonce in-window → signed 200 ack, handler NOT re-run; fresh nonce → dispatches again (handler upserts); failed dispatch releases the nonce so the redelivery is processed. |
 | **Result object** | maps `CallbackPayload` JSON → symbol-keyed accessors; `draft`/`note` surface as **markdown** (`body_markdown`, HTML fallback); `note` selects the `kind: "summary"` note, never widget notes; `decline` → `ok? == false`; absent optional fields → nil. |
 | **Session continuation** | `session_id` present → forwarded in the trigger body; absent/blank → omitted; result exposes `session_id`; full round-trip (trigger → `result.session_id` → follow-up trigger carries it). |
 | **Handler config** | string-named handler lazy-loads; missing handler → fail closed, structured error. |

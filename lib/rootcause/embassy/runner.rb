@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "timeout"
 
 module RootCause
   module Embassy
@@ -27,7 +28,24 @@ module RootCause
       end
 
       # @return [Reply]
+      #
+      # The whole pipeline runs under ONE deadline (config.total_deadline), not just
+      # the execution: the host gives the invocation a single 25s shot with no retry,
+      # so a script fetch that hangs must still leave us time to answer with a signed
+      # result. Timeout.timeout without an exception class raises a non-StandardError
+      # internally, so neither the executor's rescue nor the backstop below swallows
+      # it — the deadline always wins.
       def handle(raw_body:, signature:)
+        started = clock_ms
+        Timeout.timeout(@config.total_deadline.to_f) { handle_within_deadline(raw_body, signature) }
+      rescue Timeout::Error
+        log_deadline
+        reply(200, envelope(deadline_result(started)))
+      end
+
+      private
+
+      def handle_within_deadline(raw_body, signature)
         invocation = authenticate(raw_body, signature)
         result = run(invocation)
         log(invocation, ok: result.ok, duration_ms: result.duration_ms)
@@ -48,7 +66,25 @@ module RootCause
         reply(500, {ok: false, error: {class: "internal_error", message: e.class.name}})
       end
 
-      private
+      # Same shape the executor produces for its own timeout, so the host sees one
+      # failure vocabulary whether the body or the whole invocation ran long.
+      def deadline_result(started)
+        Executor::Result.new(
+          ok: false,
+          return_value: nil,
+          error: {
+            class: "Timeout::Error",
+            message: "invocation exceeded #{@config.total_deadline}s total deadline",
+            backtrace: []
+          },
+          stdout: "",
+          duration_ms: (clock_ms - started).round
+        )
+      end
+
+      def log_deadline
+        @config.logger&.error("[rootcause-action] refused code=deadline total_deadline=#{@config.total_deadline}")
+      end
 
       # Verify first, parse second: never spend work on an unauthenticated body.
       def authenticate(raw_body, signature)

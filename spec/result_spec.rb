@@ -11,7 +11,6 @@ RSpec.describe RootCause::Embassy::Result do
         {"kind" => "widget", "body_markdown" => "a widget", "body_html" => "<p>w</p>"}
       ],
       "actions" => [{"id" => "a1", "slug" => "recompute_record_formulas", "label" => "Approve", "description" => "d", "url" => "https://x", "color" => "green"}],
-      "reasoning_steps" => ["looked", "concluded"],
       "attachments" => [{"filename" => "f.txt", "mime_type" => "text/plain", "content_base64" => "eA=="}]
     )
 
@@ -25,7 +24,6 @@ RSpec.describe RootCause::Embassy::Result do
     expect(result.actions.first[:url]).to eq("https://x")
     expect(result.actions.first[:color]).to eq("green")
     expect(result.actions.first[:description]).to eq("d")
-    expect(result.reasoning_steps).to eq(["looked", "concluded"])
     expect(result.attachments.first[:filename]).to eq("f.txt")
     expect(result).to be_frozen
     expect(result.metadata).to be_frozen
@@ -143,8 +141,33 @@ RSpec.describe RootCause::Embassy::Result do
     expect(result.decline).to be_nil
     expect(result.metadata).to eq({})
     expect(result.actions).to eq([])
-    expect(result.reasoning_steps).to eq([])
+    expect(result.executed_actions).to eq([])
+    expect(result.questions).to eq([])
+    expect(result.delete_ids).to eq([])
     expect(result.attachments).to eq([])
+  end
+
+  it "surfaces executed_actions (already-run, render as outcomes), questions and delete" do
+    result = described_class.from_payload(
+      "executed_actions" => [
+        {"id" => "ar-1", "slug" => "recompute_record_formulas", "label" => "Recompute", "ok" => true, "summary" => "42 rows"}
+      ],
+      "questions" => [{"id" => "q1", "text" => "Which environment?"}],
+      "delete" => ["summary", "trace"]
+    )
+
+    executed = result.executed_actions.first
+    expect(executed[:id]).to eq("ar-1")
+    expect(executed[:slug]).to eq("recompute_record_formulas")
+    expect(executed[:label]).to eq("Recompute")
+    expect(executed[:ok]).to be(true)
+    expect(executed[:summary]).to eq("42 rows")
+    # Proposals and already-run actions are separate lists — never render an
+    # executed action as a confirm button.
+    expect(result.actions).to eq([])
+    expect(result.questions.first[:text]).to eq("Which environment?")
+    # `delete` is a reserved word; the wire key stays `delete`.
+    expect(result.delete_ids).to eq(["summary", "trace"])
   end
 
   it "accepts already-symbol-keyed input too" do
