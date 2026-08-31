@@ -4,6 +4,7 @@ RSpec.describe RootCause::Embassy::Result do
   it "maps CallbackPayload JSON to symbol-keyed, frozen accessors with markdown draft/note" do
     result = described_class.from_payload(
       "analysis_id" => "run-1",
+      "project_id" => "11111111-1111-1111-1111-111111111111",
       "metadata" => {"resource_type" => "SupportTicket", "resource_id" => 42},
       "draft" => {"body_markdown" => "**hi**", "body_html" => "<b>hi</b>"},
       "notes" => [
@@ -15,6 +16,7 @@ RSpec.describe RootCause::Embassy::Result do
     )
 
     expect(result.analysis_id).to eq("run-1")
+    expect(result.project_id).to eq("11111111-1111-1111-1111-111111111111")
     expect(result.metadata).to eq({resource_type: "SupportTicket", resource_id: 42})
     expect(result.draft).to eq("**hi**")
     expect(result.note).to eq("the summary [trace](https://x)")
@@ -116,6 +118,11 @@ RSpec.describe RootCause::Embassy::Result do
   it "exposes the session_id from the result envelope" do
     result = described_class.from_payload("analysis_id" => "r", "session_id" => "sess-1")
     expect(result.session_id).to eq("sess-1")
+  end
+
+  it "exposes the project_id selected by map-mode authentication" do
+    result = described_class.from_payload("analysis_id" => "r", "project_id" => "11111111-1111-1111-1111-111111111111")
+    expect(result.project_id).to eq("11111111-1111-1111-1111-111111111111")
   end
 
   it "leaves session_id nil when the envelope omits it" do

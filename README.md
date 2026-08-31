@@ -43,6 +43,26 @@ retries**, so the gem bounds the *whole* invocation (script fetch **and** execut
 `total_deadline`; `timeout` remains the execute backstop inside it. A breach returns the same signed
 `Timeout::Error` failure result an over-long body would.
 
+One mount may serve several projects without sharing a reverse key. Configure **exactly one** of the
+single `secret` above or a non-empty UUID map; map values must be non-blank:
+
+```ruby
+RootCause::Embassy.configure do |c|
+  c.secrets = {
+    "11111111-1111-1111-1111-111111111111" => ENV.fetch("ROOTCAUSE_ACTION_SECRET_SUPPORT"),
+    "22222222-2222-2222-2222-222222222222" => ENV.fetch("ROOTCAUSE_ACTION_SECRET_BILLING"),
+  }
+  c.fetch_url = "https://<rootcause>/actions/script"
+end
+```
+
+Map mode reads only unverified `project_id` to choose a candidate, then verifies the exact raw bytes.
+A missing, malformed, or unknown selector is an opaque unsigned `401 bad_signature`; a bad HMAC for
+a known action or result callback receives the usual refusal signed with that project's key. Result
+callbacks require `project_id` in map mode. The health probe is `GET /rootcause/action/health?project_id=<uuid>`,
+signed over the raw query; invalid health probes stay opaque unsigned `404`, and single-secret
+deployments also accept the legacy empty query.
+
 Tenant-enabled Embassy deployments **must** set `require_tenant_context = true`; this refuses a signed
 tenantless invocation before script resolution. A deployment serving a genuinely flat sibling project
 may explicitly allow selected globally unique action ids through `tenantless_actions`; partial tuples
@@ -132,6 +152,7 @@ class AnalyzeTicketJob < ApplicationJob
                      content_base64: Base64.strict_encode64(ticket.log_file)}],
       metadata: {resource_type: "SupportTicket", resource_id: ticket.id}, # echoed back verbatim
       session_id: ticket.rc_session_id,           # nil on the first turn; set to continue
+      project_id: "11111111-1111-1111-1111-111111111111", # required only with c.secrets
     )
     ticket.update!(
       rc_analysis_id: analysis.analysis_id,       # persist alongside the resource

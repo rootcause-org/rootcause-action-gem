@@ -1,1 +1,0 @@
-{"action_id":"devise_send_password_reset","script_digest":"sha256:3932d2ca27f8fbf9fd05be71c099fa4a2c2241d0ea64683e542f5f0f3438d7bd","params":{"email":"x@acme.com"},"schema":{"email":{"type":"string","required":true}},"runtime":"ruby","project_id":"00000000-0000-0000-0000-000000000000","nonce":"contract-nonce-invocation","issued_at":"2026-06-20T00:00:00Z","dry_run":false}

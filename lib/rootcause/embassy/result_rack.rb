@@ -19,17 +19,20 @@ module RootCause
 
       # @return [Runner::Reply] a signed ack (200 ok) or a signed structured refusal
       def handle(raw_body:, signature:)
-        payload = authenticate(raw_body, signature)
-        return ack_duplicate(payload) unless fresh?(payload)
+        secret = SecretSelector.for_body(@config, raw_body)
+        return selector_failure unless secret
+
+        payload = authenticate(raw_body, signature, secret)
+        return ack_duplicate(payload, secret) unless fresh?(payload)
 
         result = dispatch_or_release(payload)
         log(result)
-        reply(200, {ok: true})
+        reply(200, {ok: true}, secret)
       rescue Error => e
         # Expected refusals: bad signature, replay, missing fields, unconfigured
         # handler. Still signed so the host can trust the refusal.
         log_refusal(e)
-        reply(e.status, {ok: false, error: {class: e.code, message: e.message}})
+        reply(e.status, {ok: false, error: {class: e.code, message: e.message}}, secret)
       rescue => e
         # Fail-closed backstop. A handler exception or any unforeseen condition is a
         # signed, structured 500 — never an unsigned crash, and deliberately NOT an
@@ -37,14 +40,14 @@ module RootCause
         # again — which is exactly why ResultHandler#process is documented idempotent. Message is the class only
         # — an unexpected error's message may carry untrusted input.
         log_unexpected(e)
-        reply(500, {ok: false, error: {class: "internal_error", message: e.class.name}})
+        reply(500, {ok: false, error: {class: "internal_error", message: e.class.name}}, secret)
       end
 
       private
 
       # Verify first, parse second: never spend work on an unauthenticated body.
-      def authenticate(raw_body, signature)
-        unless Signature.valid?(signature, raw_body, secret: @config.secret)
+      def authenticate(raw_body, signature, secret)
+        unless Signature.valid?(signature, raw_body, secret: secret)
           raise SignatureError, "signature missing or invalid"
         end
 
@@ -81,9 +84,9 @@ module RootCause
       # A redelivery inside the window: the first delivery already reached the
       # handler, so re-dispatching would double-process. Ack it exactly like the
       # first — same signed 200 — so the host stops retrying.
-      def ack_duplicate(payload)
+      def ack_duplicate(payload, secret)
         @config.logger&.info("[rootcause-result] duplicate analysis_id=#{payload["analysis_id"]} acked (redelivery)")
-        reply(200, {ok: true})
+        reply(200, {ok: true}, secret)
       end
 
       # The nonce is consumed BEFORE dispatch (so two concurrent redeliveries can't
@@ -124,9 +127,17 @@ module RootCause
         raise HandlerError, "result_handler #{name} could not be loaded"
       end
 
-      def reply(status, payload)
+      def reply(status, payload, secret)
         body = JSON.generate(payload)
-        Runner::Reply.new(status: status, body: body, signature: Signature.sign(body, secret: @config.secret))
+        Runner::Reply.new(status: status, body: body, signature: Signature.sign(body, secret: secret))
+      end
+
+      def selector_failure
+        Runner::Reply.new(
+          status: 401,
+          body: JSON.generate(ok: false, error: {class: "bad_signature", message: "signature missing or invalid"}),
+          signature: nil
+        )
       end
 
       # Customer-side audit: the run id, metadata KEYS only (never values — they
@@ -190,10 +201,8 @@ module RootCause
       end
 
       def respond(status, body, signature)
-        headers = {
-          "content-type" => JSON_TYPE,
-          Signature::HEADER => signature
-        }
+        headers = {"content-type" => JSON_TYPE}
+        headers[Signature::HEADER] = signature if signature
         [status, headers, [body]]
       end
 

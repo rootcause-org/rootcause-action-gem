@@ -36,25 +36,48 @@ module RootCause
       # internally, so neither the executor's rescue nor the backstop below swallows
       # it — the deadline always wins.
       def handle(raw_body:, signature:)
+        secret = SecretSelector.for_body(@config, raw_body)
+        return selector_failure unless secret
+
         started = clock_ms
-        Timeout.timeout(@config.total_deadline.to_f) { handle_within_deadline(raw_body, signature) }
+        Timeout.timeout(@config.total_deadline.to_f) { handle_within_deadline(raw_body, signature, secret) }
       rescue Timeout::Error
         log_deadline
-        reply(200, envelope(deadline_result(started)))
+        reply(200, envelope(deadline_result(started)), secret)
+      end
+
+      # GET health is the only action-plane request without a JSON body. In map
+      # mode its raw query selects the candidate key, then that exact query is
+      # verified before the signed capability response is trusted.
+      def health(raw_query:, signature:)
+        secret = SecretSelector.for_query(@config, raw_query)
+        return Reply.new(status: 404, body: "", signature: nil) unless secret
+
+        # Health stays opaque to an unauthenticated probe, even when its selector
+        # happened to name a configured project.
+        return Reply.new(status: 404, body: "", signature: nil) unless Signature.valid?(signature, raw_query, secret: secret)
+
+        reply(200, {
+          ok: true,
+          embassy: "ruby",
+          version: VERSION,
+          protocol: 1,
+          capabilities: ["actions", "dry_run", "analysis_result", "health"]
+        }, secret)
       end
 
       private
 
-      def handle_within_deadline(raw_body, signature)
-        invocation = authenticate(raw_body, signature)
-        result = run(invocation)
+      def handle_within_deadline(raw_body, signature, secret)
+        invocation = authenticate(raw_body, signature, secret)
+        result = run(invocation, secret)
         log(invocation, ok: result.ok, duration_ms: result.duration_ms)
-        reply(200, envelope(result))
+        reply(200, envelope(result), secret)
       rescue Error => e
         # Every expected refusal lands here: bad signature, replay, schema,
         # resolve. Reply is still signed so the host can trust the refusal.
         log_refusal(e, raw_body)
-        reply(e.status, {ok: false, error: {class: e.code, message: e.message}})
+        reply(e.status, {ok: false, error: {class: e.code, message: e.message}}, secret)
       rescue => e
         # Fail-closed backstop. The pipeline raises typed Errors for expected
         # refusals; anything else reaching here is an unforeseen condition (a
@@ -63,7 +86,7 @@ module RootCause
         # handler. Message is the class only: an unexpected error's message may
         # carry untrusted input, so we don't echo it on the wire.
         log_refusal_unexpected(e, raw_body)
-        reply(500, {ok: false, error: {class: "internal_error", message: e.class.name}})
+        reply(500, {ok: false, error: {class: "internal_error", message: e.class.name}}, secret)
       end
 
       # Same shape the executor produces for its own timeout, so the host sees one
@@ -87,8 +110,8 @@ module RootCause
       end
 
       # Verify first, parse second: never spend work on an unauthenticated body.
-      def authenticate(raw_body, signature)
-        unless Signature.valid?(signature, raw_body, secret: @config.secret)
+      def authenticate(raw_body, signature, secret)
+        unless Signature.valid?(signature, raw_body, secret: secret)
           raise SignatureError, "signature missing or invalid"
         end
 
@@ -112,7 +135,7 @@ module RootCause
         raise InvalidRequest, "body is not valid JSON"
       end
 
-      def run(invocation)
+      def run(invocation, secret)
         started = clock_ms
 
         Replay.guard!(
@@ -129,7 +152,8 @@ module RootCause
         script = @resolver.resolve(
           action_id: invocation["action_id"],
           digest: invocation["script_digest"],
-          project_id: invocation["project_id"]
+          project_id: invocation["project_id"],
+          secret: secret
         )
 
         # WIRE CONTRACT v1 §5 (see WIRE-CONTRACT.md in rootcause): dry_run
@@ -213,9 +237,19 @@ module RootCause
         }
       end
 
-      def reply(status, payload)
+      def reply(status, payload, secret)
         body = JSON.generate(payload)
-        Reply.new(status: status, body: body, signature: Signature.sign(body, secret: @config.secret))
+        Reply.new(status: status, body: body, signature: Signature.sign(body, secret: secret))
+      end
+
+      # No map entry means no response key. Do not parse beyond the selector,
+      # touch replay, or leak which projects this shared mount serves.
+      def selector_failure
+        Reply.new(
+          status: 401,
+          body: JSON.generate(ok: false, error: {class: "bad_signature", message: "signature missing or invalid"}),
+          signature: nil
+        )
       end
 
       # Customer-side audit: identifiers and shape only. Never the secret, never

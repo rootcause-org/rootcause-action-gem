@@ -42,7 +42,7 @@ module RootCause
     # it on the record and pass it back to start_analysis to continue the thread; a
     # follow-up then sends only the new message (the host keeps prior history).
     class Result
-      attr_reader :analysis_id, :session_id, :metadata, :draft, :note, :actions,
+      attr_reader :analysis_id, :session_id, :project_id, :metadata, :draft, :note, :actions,
         :executed_actions, :questions, :delete_ids, :attachments, :decline
 
       # The note `key` that carries the human-facing summary. The host
@@ -51,10 +51,11 @@ module RootCause
       # and never burned into `note`.
       SUMMARY_KEY = "summary"
 
-      def initialize(analysis_id:, session_id:, metadata:, draft:, note:, actions:,
+      def initialize(analysis_id:, session_id:, project_id:, metadata:, draft:, note:, actions:,
         executed_actions:, questions:, delete_ids:, attachments:, decline:)
         @analysis_id = analysis_id
         @session_id = session_id
+        @project_id = project_id
         @metadata = metadata
         @draft = draft
         @note = note
@@ -80,6 +81,7 @@ module RootCause
         new(
           analysis_id: data[:analysis_id],
           session_id: data[:session_id],
+          project_id: data[:project_id],
           metadata: data[:metadata] || EMPTY_HASH,
           draft: markdown_of(data[:draft]),
           note: markdown_of(summary_note(data[:notes])),

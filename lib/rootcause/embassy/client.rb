@@ -46,7 +46,7 @@ module RootCause
       # @raise [TriggerError] non-2xx, malformed response, or transport failure
       # @raise [ArgumentError] missing trigger_url, an over-cap/malformed attachment,
       #   or a principal without both kind and external_id
-      def start_analysis(subject:, body:, attachments: [], metadata: {}, session_id: nil, tenant: nil, principal: nil)
+      def start_analysis(subject:, body:, attachments: [], metadata: {}, session_id: nil, tenant: nil, principal: nil, project_id: nil)
         url = @config.trigger_url
         raise ArgumentError, "RootCause::Embassy: trigger_url is not configured" if blank?(url)
 
@@ -66,7 +66,7 @@ module RootCause
         payload["principal"] = normalize_principal(principal) unless principal.nil?
         raw = JSON.generate(payload)
 
-        response = post(url, raw, transport_error: TriggerError, label: "analysis trigger")
+        response = post(url, raw, project_id: project_id, transport_error: TriggerError, label: "analysis trigger")
         analysis = parse(response)
         log(analysis, metadata, payload["attachments"].size)
         analysis
@@ -89,7 +89,7 @@ module RootCause
       # @return [SentMessage] frozen, `ok: true` (with the host's id when echoed)
       # @raise [SentMessageError] non-2xx, malformed response, or transport failure
       # @raise [ArgumentError] missing sent_message_url, or blank sent_body/session_id
-      def capture_sent_message(sent_body:, session_id:, proposed_body: nil, sender: nil, metadata: {})
+      def capture_sent_message(sent_body:, session_id:, proposed_body: nil, sender: nil, metadata: {}, project_id: nil)
         url = @config.sent_message_url
         raise ArgumentError, "RootCause::Embassy: sent_message_url is not configured" if blank?(url)
         raise ArgumentError, "RootCause::Embassy: sent_body is required" if blank?(sent_body)
@@ -110,7 +110,7 @@ module RootCause
         payload["issued_at"] = Time.now.utc.iso8601
         raw = JSON.generate(payload)
 
-        response = post(url, raw, transport_error: SentMessageError, label: "sent-message capture")
+        response = post(url, raw, project_id: project_id, transport_error: SentMessageError, label: "sent-message capture")
         result = parse_sent_message(response)
         log_sent_message(session_id, metadata, sent_body, proposed_body)
         result
@@ -180,16 +180,19 @@ module RootCause
       # Sign the RAW body and POST it. Transport-layer failures (Net::HTTP / SSL /
       # Timeout / URI) collapse to `transport_error` so each caller surfaces its own
       # exception type for the caller to rescue and decide to retry.
-      def post(url, raw, transport_error:, label:)
-        uri = URI(url)
-        request = Net::HTTP::Post.new(uri)
-        request["content-type"] = "application/json"
-        request[Signature::HEADER] = Signature.sign(raw, secret: @config.secret)
-        request.body = raw
+      def post(url, raw, project_id:, transport_error:, label:)
+        secret = @config.outbound_secret_for(project_id)
+        begin
+          uri = URI(url)
+          request = Net::HTTP::Post.new(uri)
+          request["content-type"] = "application/json"
+          request[Signature::HEADER] = Signature.sign(raw, secret: secret)
+          request.body = raw
 
-        Http.perform(uri, request, open_timeout: @config.http_open_timeout, read_timeout: @config.http_read_timeout)
-      rescue => e
-        raise transport_error, "#{label} failed: #{e.class}: #{e.message}"
+          Http.perform(uri, request, open_timeout: @config.http_open_timeout, read_timeout: @config.http_read_timeout)
+        rescue => e
+          raise transport_error, "#{label} failed: #{e.class}: #{e.message}"
+        end
       end
 
       def parse(response)

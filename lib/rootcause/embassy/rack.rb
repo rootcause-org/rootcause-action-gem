@@ -19,6 +19,7 @@ module RootCause
       end
 
       def call(env)
+        return health(env) if env["PATH_INFO"] == "/health"
         return method_not_allowed unless env["REQUEST_METHOD"] == "POST"
 
         raw_body = read_body(env)
@@ -44,11 +45,14 @@ module RootCause
       end
 
       def respond(status, body, signature)
-        headers = {
-          "content-type" => JSON_TYPE,
-          Signature::HEADER => signature
-        }
+        headers = {"content-type" => JSON_TYPE}
+        headers[Signature::HEADER] = signature if signature
         [status, headers, [body]]
+      end
+
+      def health(env)
+        reply = runner.health(raw_query: env["QUERY_STRING"].to_s, signature: env[SIG_HEADER_ENV])
+        respond(reply.status, reply.body, reply.signature)
       end
 
       def method_not_allowed

@@ -71,6 +71,10 @@ RootCause::Embassy.configure do |c|
 end
 ```
 
+For a shared deployment, configure `c.secrets = { "<project UUID>" => "<secret>" }` instead of
+`c.secret`. In that mode every `start_analysis` and `capture_sent_message` call supplies `project_id:`;
+the client uses it only to select the local signing key.
+
 **Trigger** — call from anywhere in app code:
 
 ```ruby
@@ -83,6 +87,7 @@ analysis = RootCause::Embassy.start_analysis(
   ],
   metadata: { resource_type: "SupportTicket", resource_id: ticket.id }, # echoed back verbatim
   session_id: nil,                            # optional — omit/nil on the first turn (§2.1)
+  project_id: "11111111-1111-1111-1111-111111111111", # required only with c.secrets
 )
 analysis.analysis_id  # => "uuid"  (rootcause run id, for audit/idempotency/correlation)
 analysis.session_id   # => "uuid"  (host-minted; persist it to continue this conversation)

@@ -106,7 +106,7 @@ gem "rootcause-embassy"
 ```ruby
 # config/initializers/rootcause.rb
 RootCause::Embassy.configure do |c|
-  c.secret    = ENV.fetch("ROOTCAUSE_ACTION_SECRET")    # reverse-channel HMAC secret (per project)
+  c.secret    = ENV.fetch("ROOTCAUSE_ACTION_SECRET")    # one reverse-channel HMAC secret
   c.mount_at  = "/rootcause/action"                     # the single route
   c.fetch_url = "https://<rootcause>/actions/script"    # script-by-digest endpoint
   c.timeout   = 20                                       # hard per-EXECUTION timeout (seconds)
@@ -116,6 +116,14 @@ RootCause::Embassy.configure do |c|
   c.logger    = Rails.logger
 end
 ```
+
+A shared deployment instead sets `c.secrets = { "<project UUID>" => "<non-blank secret>", ... }`
+and leaves `c.secret` unset. Exactly one mode is valid. Map-mode invocation and result processing reads
+only the unverified `project_id` to select a candidate key, verifies the raw bytes with it, then trusts
+the payload. Missing, malformed, or unknown ids return opaque unsigned `401 bad_signature`; a selected
+bad HMAC returns the ordinary refusal signed by that selected key. Map-mode health uses signed raw
+`project_id=<uuid>` query bytes; single-secret mode accepts the legacy empty query. Outbound analysis
+calls take `project_id:` to select a map entry locally and do not duplicate it in the wire body.
 
 Mounting (Rails): the gem exposes a Rack app / engine route at `mount_at`. The customer adds **one
 line** (or the gem auto-mounts via a Railtie — decide in §8). The recommendation, documented but not

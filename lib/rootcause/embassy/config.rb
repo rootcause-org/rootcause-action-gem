@@ -13,6 +13,10 @@ module RootCause
       # `webhook_secret`. Held via ENV customer-side. Never logged.
       attr_accessor :secret
 
+      # A shared Embassy may instead hold one reverse-channel secret per project.
+      # Configure exactly one of `secret` or this UUID => secret map.
+      attr_accessor :secrets
+
       # The single mounted route, e.g. "/rootcause/action".
       attr_accessor :mount_at
 
@@ -145,13 +149,13 @@ module RootCause
       # Fail closed at boot rather than on the first invocation: a missing secret
       # or fetch_url is a deployment mistake, not a runtime condition.
       def validate!
-        raise ArgumentError, "RootCause::Embassy: secret is required" if blank?(secret)
+        validate_reverse_secrets!
         raise ArgumentError, "RootCause::Embassy: fetch_url is required" if blank?(fetch_url)
         # When the reverse channel is active (secret present), the placeholder
         # fetch_url is a deployment mistake (ROOTCAUSE_FETCH_URL unset) that would
         # otherwise fail opaquely at the first resolve. Name the fix at boot. An
         # inert app (no secret) never fetches a script, so the placeholder is fine.
-        if !blank?(secret) && placeholder_fetch_url?
+        if reverse_channel_configured? && placeholder_fetch_url?
           raise ArgumentError,
             "RootCause::Embassy: fetch_url is the placeholder " \
             "(#{fetch_url}) — set ROOTCAUSE_FETCH_URL to the host's /actions/script endpoint"
@@ -178,6 +182,24 @@ module RootCause
 
       # True once the API plane is wired far enough to make a call.
       def api_configured? = !blank?(api_base_url) && !blank?(api_key)
+
+      def map_mode? = !secrets.nil?
+
+      # Selects a configured candidate only; callers must still verify the raw
+      # request bytes before trusting the project id that chose it.
+      def secret_for(project_id)
+        return secret unless map_mode?
+        return nil unless project_id.is_a?(String) && project_uuid?(project_id)
+
+        secrets[project_id] || secrets[project_id.downcase]
+      end
+
+      def outbound_secret_for(project_id)
+        selected = secret_for(project_id)
+        return selected unless blank?(selected)
+
+        raise ArgumentError, "RootCause::Embassy: project_id is required and must select a configured reverse secret"
+      end
 
       # The API plane is opt-in: an Embassy that sets neither attribute validates exactly as before.
       # Once ONE of them is set the deployment intends API calls, so a half-wired one is a boot-time
@@ -208,7 +230,7 @@ module RootCause
         raise ArgumentError, "RootCause::Embassy: chat_project is required when chat is configured" if blank?(chat_project)
         # The two secrets are different privilege boundaries; the same value in both means one of the
         # two ENV vars is pointed at the wrong secret.
-        if !blank?(secret) && chat_secret.to_s == secret.to_s
+        if reverse_secrets.include?(chat_secret.to_s)
           raise ArgumentError,
             "RootCause::Embassy: chat_secret must differ from secret — ROOTCAUSE_CHAT_SECRET is the " \
             "project's webhook_secret, not the action reverse-channel secret"
@@ -230,7 +252,30 @@ module RootCause
         true
       end
 
-      def blank?(value) = value.nil? || value.to_s.empty?
+      def blank?(value) = value.nil? || value.to_s.strip.empty?
+
+      def validate_reverse_secrets!
+        if map_mode?
+          raise ArgumentError, "RootCause::Embassy: configure exactly one of secret or secrets" unless blank?(secret)
+          unless secrets.is_a?(Hash) && !secrets.empty? &&
+              secrets.all? { |project_id, value| project_uuid?(project_id) && value.is_a?(String) && !blank?(value) }
+            raise ArgumentError, "RootCause::Embassy: secrets must be a non-empty map of project UUIDs to non-blank secrets"
+          end
+          normalized = secrets.each_with_object({}) do |(project_id, value), map|
+            canonical = project_id.downcase
+            raise ArgumentError, "RootCause::Embassy: secrets keys must be unique project UUIDs" if map.key?(canonical)
+
+            map[canonical] = value
+          end
+          self.secrets = normalized
+        elsif blank?(secret)
+          raise ArgumentError, "RootCause::Embassy: secret is required"
+        end
+      end
+
+      def reverse_channel_configured? = !blank?(secret) || (secrets.is_a?(Hash) && !secrets.empty?)
+      def reverse_secrets = map_mode? ? secrets.values : [secret]
+      def project_uuid?(value) = value.is_a?(String) && /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i.match?(value)
     end
   end
 end

@@ -16,6 +16,8 @@ module RootCause
 
       # Hex HMAC of `payload` under `secret`, with the `sha256=` wire prefix.
       def sign(payload, secret:)
+        raise ArgumentError, "reverse secret is required" if secret.nil? || secret.to_s.strip.empty?
+
         PREFIX + hexdigest(payload, secret)
       end
 
@@ -23,7 +25,7 @@ module RootCause
       # Returns false (never raises) on a nil/blank/malformed header so callers
       # can treat "no signature" and "bad signature" identically — both refuse.
       def valid?(header, payload, secret:)
-        return false if header.nil? || header.empty?
+        return false if header.nil? || header.empty? || secret.nil? || secret.to_s.strip.empty?
 
         expected = sign(payload, secret: secret)
         secure_compare(expected, header)

@@ -1,0 +1,208 @@
+{
+  "secrets": {
+    "action_reverse_secret": "contract-reverse-secret",
+    "webhook_secret": "contract-chat-secret"
+  },
+  "clock": {
+    "issued_at": "2026-06-20T00:00:00Z",
+    "now_unix": 1781913600,
+    "window_seconds": 300
+  },
+  "header": "X-Webhook-Signature",
+  "bodies": [
+    {
+      "name": "invocation_flat",
+      "file": "actions/invocation_flat.json",
+      "direction": "host->embassy",
+      "secret": "contract-reverse-secret",
+      "body_bytes": 351,
+      "body_sha256": "0cc3affbd01f28f0acf6b4d3214f479337c6bd008a3ffcf2a4e5d7f814a0fed1",
+      "signature": "sha256=dfec8af0014df6d7d71cc81de5f894348d9ab79c3cfbd8481ab4bac8e4dd6df5",
+      "note": ""
+    },
+    {
+      "name": "invocation_tenant",
+      "file": "actions/invocation_tenant.json",
+      "direction": "host->embassy",
+      "secret": "contract-reverse-secret",
+      "body_bytes": 459,
+      "body_sha256": "db15152441a8c2b66c60a8ada69af746a2fd31d586f4bd538a172051f7d16b96",
+      "signature": "sha256=633ab268f2714dc960adf99c69482809f6ae4b069fdcdae571fa196fad320bc2",
+      "note": ""
+    },
+    {
+      "name": "invocation_dry_run",
+      "file": "actions/invocation_dry_run.json",
+      "direction": "host->embassy",
+      "secret": "contract-reverse-secret",
+      "body_bytes": 369,
+      "body_sha256": "048abcf662f658e8632973be3e0b50c39ee7fda89a43108a9e103d385eb7a8a4",
+      "signature": "sha256=0139734095795d592e8df1f42eb69cb9cf83e05496ada5dccd6cd981bb696a10",
+      "note": ""
+    },
+    {
+      "name": "fetch_response",
+      "file": "actions/fetch_response.json",
+      "direction": "host->embassy",
+      "secret": "contract-reverse-secret",
+      "body_bytes": 192,
+      "body_sha256": "0ba14365bef3666172ff7929f40622eb1fd789d1ed91922c4d6a645520717430",
+      "signature": "sha256=555d8151954d27c3474270eea347dcb24c111fa6d3b85f5362336c01f475714f",
+      "note": "GET response body; sha256(script) MUST equal digest"
+    },
+    {
+      "name": "result_ok",
+      "file": "actions/result_ok.json",
+      "direction": "embassy->host",
+      "secret": "contract-reverse-secret",
+      "body_bytes": 104,
+      "body_sha256": "8e58227905b0756d58d732024e9a03ca3989c5949c554ac494ca8ee8c8f2bbac",
+      "signature": "sha256=880c5db4dc0fa94ca9d997390619d14bac82f00d023457391e4681c3bf9d4f91",
+      "note": ""
+    },
+    {
+      "name": "result_dry_run",
+      "file": "actions/result_dry_run.json",
+      "direction": "embassy->host",
+      "secret": "contract-reverse-secret",
+      "body_bytes": 105,
+      "body_sha256": "bade26775ed0f389495c9306979d9cd158aa4d431a93632f0bff69526f833b0d",
+      "signature": "sha256=eeed8707017f3551e2bdd517d3576f4d03f73e3a1e935272898530a059a1a648",
+      "note": ""
+    },
+    {
+      "name": "result_refusal_bad_signature",
+      "file": "actions/result_refusal_bad_signature.json",
+      "direction": "embassy->host",
+      "secret": "contract-reverse-secret",
+      "body_bytes": 87,
+      "body_sha256": "0e0b51c5e6db96443e1773b09dbbd4dfc187d6fb86bdf5ec80ed1faea864f409",
+      "signature": "sha256=523c66099e690b39e4baa4319c652ccfeb35f4ba6f12a50db0c9e824a12d0e9a",
+      "note": "HTTP 401"
+    },
+    {
+      "name": "result_refusal_replay",
+      "file": "actions/result_refusal_replay.json",
+      "direction": "embassy->host",
+      "secret": "contract-reverse-secret",
+      "body_bytes": 79,
+      "body_sha256": "be7f67629e582f7bdb93a5642b7c46b6fe29677c1e79ec766a041d49517b6116",
+      "signature": "sha256=8412f31eabb2b16e417a27a8556f2f4305aeed42ab3ffa55b67b2c987321e372",
+      "note": "HTTP 409"
+    },
+    {
+      "name": "result_refusal_schema_violation",
+      "file": "actions/result_refusal_schema_violation.json",
+      "direction": "embassy->host",
+      "secret": "contract-reverse-secret",
+      "body_bytes": 101,
+      "body_sha256": "689aff6ea3c8dab70ed1c0320cb1e3c3abd0ef9dd0f70424295312f6ccf5b37c",
+      "signature": "sha256=0e91a2500f0425e8a5629713f9174573774f1c3b484377354fea155887fdea9c",
+      "note": "HTTP 422"
+    },
+    {
+      "name": "result_refusal_resolve_failed",
+      "file": "actions/result_refusal_resolve_failed.json",
+      "direction": "embassy->host",
+      "secret": "contract-reverse-secret",
+      "body_bytes": 120,
+      "body_sha256": "ad85f68c051ecb1f86f42344a0054e13ab9c8a065fd7ee9c8b013031caa444b1",
+      "signature": "sha256=87274403846bfdec618dea03f34b91925faf9b5421ad11bbd94944b0e70eb6d6",
+      "note": "HTTP 502"
+    },
+    {
+      "name": "health_response",
+      "file": "actions/health_response.json",
+      "direction": "embassy->host",
+      "secret": "contract-reverse-secret",
+      "body_bytes": 123,
+      "body_sha256": "216487f59cfa3ab1f2d2b6bed508b5cb5a6a33a03df4d51f92ab077950387f4c",
+      "signature": "sha256=d1083389292046ccffe21a1a0852e1e59c9b529d3ce75669409f6aa9212a69fa",
+      "note": "HTTP 200"
+    },
+    {
+      "name": "trigger",
+      "file": "analysis/trigger.json",
+      "direction": "embassy->host",
+      "secret": "contract-reverse-secret",
+      "body_bytes": 260,
+      "body_sha256": "2fb26411f79ff905ea9df2fe598a5da9965bba8cd853994dcad2a405ec03c9c0",
+      "signature": "sha256=a14cd9ae41b019902146301edceb1285eee3ac4334feefc2574b3a75bb2ef969",
+      "note": ""
+    },
+    {
+      "name": "trigger_with_principal",
+      "file": "analysis/trigger_with_principal.json",
+      "direction": "embassy->host",
+      "secret": "contract-reverse-secret",
+      "body_bytes": 536,
+      "body_sha256": "6b8879631ebdccacd3fc7043919723a34620db6041bf491c959c9a6c54283193",
+      "signature": "sha256=f4410c09bb8bd5434491eae9e48bb4c490c7ada4710e2bdbf75aba3e8adab618",
+      "note": ""
+    },
+    {
+      "name": "result_callback",
+      "file": "analysis/result_callback.json",
+      "direction": "host->embassy",
+      "secret": "contract-reverse-secret",
+      "body_bytes": 1347,
+      "body_sha256": "391c3979353c367002de0ffb61c300195e0bde0577d044f4a967107b9031449e",
+      "signature": "sha256=a4296d57fd15bf2f812f3b18ba01f18b2c28040a74504f215c6c72c63b0b4421",
+      "note": "nonce == analysis_id == run_id"
+    },
+    {
+      "name": "result_ack",
+      "file": "analysis/result_ack.json",
+      "direction": "embassy->host",
+      "secret": "contract-reverse-secret",
+      "body_bytes": 11,
+      "body_sha256": "4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93",
+      "signature": "sha256=667acfa9054179aadbdafab47a952c1f1c2e1344ac87539c1910a83aa1b8c184",
+      "note": ""
+    },
+    {
+      "name": "sent_message",
+      "file": "analysis/sent_message.json",
+      "direction": "embassy->host",
+      "secret": "contract-reverse-secret",
+      "body_bytes": 387,
+      "body_sha256": "874c7488c81fbd0cd3de62fd67a8a2b688b7eda872159f50636ae24c1ed79da4",
+      "signature": "sha256=52563ff523362ee9af5c5c134d0cd998e5a9d0b28f8f721b4d0d1ec9079f5eb3",
+      "note": ""
+    },
+    {
+      "name": "answers",
+      "file": "analysis/answers.json",
+      "direction": "embassy->host",
+      "secret": "contract-reverse-secret",
+      "body_bytes": 252,
+      "body_sha256": "e444a2d29ae81f1ad47c627206272a53d248791457a69ee04ac213db0e150c78",
+      "signature": "sha256=211591ef1d193aee02b59a31630e659d15a4409994fd72d95532ad9b5f739009",
+      "note": ""
+    }
+  ],
+  "query_strings": [
+    {
+      "name": "script_fetch",
+      "file": "actions/script_fetch_query.txt",
+      "direction": "embassy->host",
+      "secret": "contract-reverse-secret",
+      "raw_query": "action_id=devise_send_password_reset&digest=sha256%3A3932d2ca27f8fbf9fd05be71c099fa4a2c2241d0ea64683e542f5f0f3438d7bd&project_id=11111111-1111-1111-1111-111111111111",
+      "signature": "sha256=700509ad17dfe340e4d8ec9b1c492abbc9ef8f9db7656887b5ad62e011bff3ae",
+      "note": "GET has no body; the signature covers the raw query string, params in this exact order"
+    },
+    {
+      "name": "health",
+      "file": "actions/health_query.txt",
+      "direction": "host->embassy",
+      "secret": "contract-reverse-secret",
+      "raw_query": "project_id=11111111-1111-1111-1111-111111111111",
+      "signature": "sha256=6bba5e70d3e25fd6a175bff7d6c7a062c28033fd7cc90ace12168eb3c533c45a",
+      "note": "map-mode health selects the project secret before verifying the signed raw query"
+    }
+  ],
+  "script_digest": {
+    "script": "{ found: true, email: params[:email] }",
+    "digest": "sha256:3932d2ca27f8fbf9fd05be71c099fa4a2c2241d0ea64683e542f5f0f3438d7bd"
+  }
+}
