@@ -40,7 +40,10 @@ retryable by the host. Handlers must stay idempotent regardless.
 Never derive tenant identity from `params`. A bound signed invocation carries `tenant_id` +
 `tenant_slug` and may carry `tenant_scope_value`; a flat invocation omits all three to preserve its
 original bytes. Tenant-enabled deployments set `require_tenant_context = true`, which rejects an absent
-tuple before resolving the script. The executor removes stale `RC_TENANT_*` first and installs only
+tuple before resolving the script unless its signed `action_id` is explicitly listed in
+`tenantless_actions`. That allowlist is for globally unique flat-project actions whose reviewed body
+derives its tenant from the target record; partial tuples always refuse, and complete tuples remain
+valid. The executor removes stale `RC_TENANT_*` first and installs only
 non-empty trusted values, so flat/missing scope stays absent. Reserve both tenant field names and
 `RC_TENANT_*` names from action schemas. Validate bound ids as non-nil UUIDs, slugs with the host's
 canonical slug rule, and all env-bound values as NUL-free before resolving the script.

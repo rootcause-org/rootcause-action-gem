@@ -74,7 +74,9 @@ A single mounted handler does exactly this, fail-closed at every step:
 3. **Validate trusted tenant context** — the signed top-level `tenant_id`, `tenant_slug`, and
    `tenant_scope_value` keys must be strings when present. A flat invocation omits all three; a
    tenant-bound invocation requires a non-nil UUID id + canonical
-   lowercase slug. Scope value may be absent/empty; no env-bound field may contain NUL.
+   lowercase slug. Scope value may be absent/empty; no env-bound field may contain NUL. A strict
+   deployment may exempt selected signed action ids through `tenantless_actions`; partial tuples
+   always refuse.
 4. **Validate params** against the `schema` carried in the invocation (defense in depth — rootcause
    already validated at propose-time). Types: `string`, `integer`, `number`, `boolean`, `string[]`.
    Tenant selector names are reserved and rejected in both params and schema.
@@ -110,6 +112,7 @@ RootCause::Embassy.configure do |c|
   c.timeout   = 20                                       # hard per-EXECUTION timeout (seconds)
   c.total_deadline = 22                                  # whole-invocation budget: fetch + execute
   c.require_tenant_context = true                        # REQUIRED on tenant-enabled projects
+  c.tenantless_actions = %w[staff_flat_action]           # narrow flat exceptions by action id
   c.logger    = Rails.logger
 end
 ```
@@ -178,7 +181,8 @@ They are trusted because the host stamps them outside model-authored params and 
 `tenant_id`, `tenant_slug`, `tenant_scope_value`, and their `RC_TENANT_*` spellings are reserved param
 names: params can select only an in-tenant target, never the tenant itself. A tenant-enabled Embassy
 deployment must set `require_tenant_context = true`, making an absent tuple a hard refusal before script
-resolution; flat deployments retain the default `false`.
+resolution unless the signed action id is in `tenantless_actions`; partial tuples still refuse. Flat
+deployments retain the default `false`.
 
 ### 5b. Embedded-chat token (gem → browser → host)
 

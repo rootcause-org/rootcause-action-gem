@@ -56,6 +56,7 @@ RSpec.describe RootCause::Embassy::Config do
     expect(cfg.timeout).to eq(20)
     expect(cfg.total_deadline).to eq(22)
     expect(cfg.require_tenant_context).to be(false)
+    expect(cfg.tenantless_actions).to eq([])
   end
 
   it "rejects a total_deadline that does not exceed the execute timeout" do
@@ -72,6 +73,17 @@ RSpec.describe RootCause::Embassy::Config do
     cfg.fetch_url = "https://x"
     cfg.require_tenant_context = "yes"
     expect { cfg.validate! }.to raise_error(ArgumentError, /require_tenant_context/)
+  end
+
+  it "rejects malformed tenantless action allowlists" do
+    cfg = described_class.new
+    cfg.secret = "s"
+    cfg.fetch_url = "https://x"
+
+    ["action", [""], [:action], ["action", "action"]].each do |value|
+      cfg.tenantless_actions = value
+      expect { cfg.validate! }.to raise_error(ArgumentError, /tenantless_actions/)
+    end
   end
 
   describe "embedded chat (optional)" do

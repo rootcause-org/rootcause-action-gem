@@ -158,7 +158,7 @@ module RootCause
       def validate_tenant_context!(invocation)
         provided = TRUSTED_TENANT_FIELDS.select { |field| invocation.key?(field) }
         if provided.empty?
-          if @config.require_tenant_context
+          if @config.require_tenant_context && !@config.tenantless_actions.include?(invocation["action_id"])
             raise InvalidRequest, "tenant context is required for this Embassy deployment"
           end
           return

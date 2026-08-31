@@ -111,6 +111,44 @@ RSpec.describe RootCause::Embassy::Runner do
     expect(fetch).not_to have_been_requested
   end
 
+  it "accepts an allowlisted flat action under strict tenant context" do
+    config.require_tenant_context = true
+    config.tenantless_actions = ["staff_flat_action"]
+    script = "{ ok: true }"
+    Wire.stub_fetch(script: script, action_id: "staff_flat_action")
+    inv = Wire.invocation(script: script, action_id: "staff_flat_action")
+    described_class::TRUSTED_TENANT_FIELDS.each { |field| inv.delete(field) }
+
+    expect(handle(inv).status).to eq(200)
+  end
+
+  it "keeps a non-allowlisted flat action strict" do
+    config.require_tenant_context = true
+    config.tenantless_actions = ["staff_flat_action"]
+    inv = Wire.invocation(action_id: "different_action")
+    described_class::TRUSTED_TENANT_FIELDS.each { |field| inv.delete(field) }
+
+    expect(handle(inv).status).to eq(400)
+  end
+
+  it "rejects a partial tuple for an allowlisted action" do
+    config.require_tenant_context = true
+    config.tenantless_actions = ["staff_flat_action"]
+    inv = Wire.invocation(action_id: "staff_flat_action")
+    inv.delete("tenant_slug")
+
+    expect(handle(inv).status).to eq(400)
+  end
+
+  it "accepts a complete tuple for an allowlisted action" do
+    config.require_tenant_context = true
+    config.tenantless_actions = ["staff_flat_action"]
+    script = "{ ok: true }"
+    Wire.stub_fetch(script: script, action_id: "staff_flat_action")
+
+    expect(handle(Wire.invocation(script: script, action_id: "staff_flat_action")).status).to eq(200)
+  end
+
   it "rejects explicit empty tenant fields and accepts an omitted bound scope value" do
     script = "ENV.values_at(*%w[RC_TENANT_ID RC_TENANT_SLUG RC_TENANT_SCOPE_VALUE])"
     Wire.stub_fetch(script: script)

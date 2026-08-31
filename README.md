@@ -32,6 +32,7 @@ RootCause::Embassy.configure do |c|
   c.timeout   = 20                                   # hard per-EXECUTION timeout (seconds)
   c.total_deadline = 22                              # budget for the WHOLE invocation (fetch + execute)
   c.require_tenant_context = true                    # REQUIRED on tenant-enabled projects
+  c.tenantless_actions = %w[staff_flat_action]       # narrow exceptions by signed action id
   c.logger    = Rails.logger
 end
 ```
@@ -43,8 +44,10 @@ retries**, so the gem bounds the *whole* invocation (script fetch **and** execut
 `Timeout::Error` failure result an over-long body would.
 
 Tenant-enabled Embassy deployments **must** set `require_tenant_context = true`; this refuses a signed
-tenantless invocation before script resolution. Flat deployments leave its default `false` so their
-wire remains unchanged. Other tunables (with defaults): `clock_skew` (300s replay window half-width), `cache_dir`
+tenantless invocation before script resolution. A deployment serving a genuinely flat sibling project
+may explicitly allow selected globally unique action ids through `tenantless_actions`; partial tuples
+still refuse, and all other actions remain strict. Flat deployments leave the strict default `false` so
+their wire remains unchanged. Other tunables (with defaults): `clock_skew` (300s replay window half-width), `cache_dir`
 (`tmp/rootcause/actions`, set `nil` for memory-only), `capture_stdout` (true), `max_stdout_bytes`
 (64 KiB), `max_backtrace_lines` (50), `http_open_timeout` / `http_read_timeout`.
 

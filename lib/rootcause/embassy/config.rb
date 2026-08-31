@@ -36,6 +36,10 @@ module RootCause
       # host tenant context is refused before script resolution. Flat deployments leave it false.
       attr_accessor :require_tenant_context
 
+      # Signed action ids allowed to omit tenant context even when strict tenant context is enabled.
+      # Keep this narrow: the reviewed action must derive and enforce its own tenant boundary.
+      attr_accessor :tenantless_actions
+
       # Replay window half-width in seconds: an invocation is fresh iff
       # |now - issued_at| <= clock_skew. ±5 min per the spec.
       attr_accessor :clock_skew
@@ -125,6 +129,7 @@ module RootCause
         @timeout = 20
         @total_deadline = 22
         @require_tenant_context = false
+        @tenantless_actions = [].freeze
         @clock_skew = 300
         @cache_dir = "tmp/rootcause/actions"
         @capture_stdout = true
@@ -159,6 +164,12 @@ module RootCause
         end
         unless [true, false].include?(require_tenant_context)
           raise ArgumentError, "RootCause::Embassy: require_tenant_context must be true or false"
+        end
+        unless tenantless_actions.is_a?(Array) &&
+            tenantless_actions.all? { |action_id| action_id.is_a?(String) && !action_id.empty? } &&
+            tenantless_actions.uniq.length == tenantless_actions.length
+          raise ArgumentError,
+            "RootCause::Embassy: tenantless_actions must be an array of unique, non-empty action ids"
         end
         validate_api!
         validate_chat!
