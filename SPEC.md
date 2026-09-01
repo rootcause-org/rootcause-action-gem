@@ -97,6 +97,10 @@ A single mounted handler does exactly this, fail-closed at every step:
    reverse-channel secret. **Log customer-side**: `action_id`, `digest`, param **keys** (never
    values), `ok`/`err`, `duration_ms`. Never log the secret or param values.
 
+Every refusal keeps the closed snake_case wire `class` and adds `code`, `hint`, and `docs`.
+`RootCause::Embassy::Error#code` is stable SCREAMING_SNAKE; its docs URL points into the hub's public
+error catalogue.
+
 ## 4. Public API (what the customer writes)
 
 ```ruby
@@ -130,6 +134,12 @@ Mounting (Rails): the gem exposes a Rack app / engine route at `mount_at`. The c
 line** (or the gem auto-mounts via a Railtie — decide in §8). The recommendation, documented but not
 enforced in v1, is to **restrict the route to rootcause's egress IP** at the edge and run under a
 **least-privileged DB role** where feasible.
+
+Chat is independently configurable: `RootCause::Embassy.configure` with only `chat_secret` and
+`chat_project` boots without the action plane. `chat_base_url` defaults to
+`https://app.replypen.com`. Mounted action/result routes in that mode return an unsigned typed
+`ACTION_PLANE_DISABLED` refusal and execute nothing. The optional signed action health endpoint remains
+available at `{mount_at}/health` when actions are configured.
 
 ## 5. Wire contract (must match the host verbatim)
 
@@ -212,12 +222,12 @@ rejected host-side.
   "aud": "rootcause:chat:<chat_project>",          // exact, host-required
   "iss": "<chat_project>",
   "jti": "uuid",                                   // single-use: burned when a session opens
-  "origin": "https://admin.kampadmin.be",          // scheme://host[:port], re-checked vs the Origin header
-  "tenant": "heyo",                                // OMITTED when flat; required on tenant-enabled projects
+  "origin": "https://app.example.com",             // scheme://host[:port], re-checked vs the Origin header
+  "tenant": "example",                             // OMITTED when flat; required on tenant-enabled projects
   "locale": "nl",                                  // OPTIONAL panel UI language hint; unsupported ⇒ en
   "color_scheme": "light",                         // OPTIONAL forced panel scheme (light|dark); other ⇒ auto
   "iat": 1785932045, "nbf": 1785932045, "exp": 1785939245,   // ttl 7200s default, ±60s host leeway
-  "principal": { "kind": "kampadmin_admin", "external_id": "<external_id>",
+  "principal": { "kind": "app_user", "external_id": "<external_id>",
                  "asserted_by": "<chat_project>", "assurance": "customer_backend_jwt" }
 }
 ```
@@ -225,6 +235,10 @@ rejected host-side.
 The `tenant` must come from the **server-side authorized** tenant context: every claim is inside the
 signature, so swapping tenant/user/origin/expiry invalidates the token, and nothing outside the
 signature is ever trusted.
+
+TTL defaults to 7200 seconds and is bounded to `1..86400` (`MAX_TTL`, 24 hours). Widget mode is exactly
+empty/`bubble`/`page`; `page` requires a non-empty target and every other mode forbids one. Invalid TTL,
+mode, and target raise `TOKEN_TTL_INVALID`, `WIDGET_MODE_INVALID`, and `WIDGET_TARGET_INVALID`.
 
 The view helper appends a loader-contract revision to `loader.js`. The host immutable-caches that
 static asset, so the revision must change whenever a generated attribute starts requiring new loader

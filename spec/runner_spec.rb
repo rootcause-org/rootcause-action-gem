@@ -262,7 +262,12 @@ RSpec.describe RootCause::Embassy::Runner do
   it "rejects a bad signature with 401, still signing the refusal" do
     reply = handle(Wire.invocation, secret: "wrong-secret")
     expect(reply.status).to eq(401)
-    expect(body_of(reply).dig("error", "class")).to eq("bad_signature")
+    expect(body_of(reply).fetch("error")).to include(
+      "class" => "bad_signature",
+      "code" => "BAD_SIGNATURE",
+      "hint" => a_kind_of(String),
+      "docs" => a_string_ending_with("#bad_signature")
+    )
     expect(RootCause::Embassy::Signature.valid?(reply.signature, reply.body, secret: Wire::SECRET)).to be(true)
   end
 
@@ -328,6 +333,8 @@ RSpec.describe RootCause::Embassy::Runner do
     payload = body_of(reply)
     expect(payload["ok"]).to be(false)
     expect(payload.dig("error", "class")).to eq("internal_error")
+    expect(payload.dig("error", "code")).to eq("INTERNAL_ERROR")
+    expect(payload.dig("error", "docs")).to end_with("#internal_error")
     # The wire message is the exception class only — never the (possibly
     # input-bearing) exception message.
     expect(payload.dig("error", "message")).to eq("RuntimeError")

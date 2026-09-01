@@ -37,6 +37,8 @@ module RootCause
       # internally, so neither the executor's rescue nor the backstop below swallows
       # it — the deadline always wins.
       def handle(raw_body:, signature:)
+        return action_plane_disabled unless @config.action_plane_enabled?
+
         secret = SecretSelector.for_body(@config, raw_body)
         return selector_failure unless secret
 
@@ -78,7 +80,7 @@ module RootCause
         # Every expected refusal lands here: bad signature, replay, schema,
         # resolve. Reply is still signed so the host can trust the refusal.
         log_refusal(e, raw_body)
-        reply(e.status, {ok: false, error: {class: e.code, message: e.message}}, secret)
+        reply(e.status, {ok: false, error: e.wire_payload}, secret)
       rescue => e
         # Fail-closed backstop. The pipeline raises typed Errors for expected
         # refusals; anything else reaching here is an unforeseen condition (a
@@ -87,7 +89,8 @@ module RootCause
         # handler. Message is the class only: an unexpected error's message may
         # carry untrusted input, so we don't echo it on the wire.
         log_refusal_unexpected(e, raw_body)
-        reply(500, {ok: false, error: {class: "internal_error", message: e.class.name}}, secret)
+        internal = InternalError.new(e.class.name)
+        reply(internal.status, {ok: false, error: internal.wire_payload}, secret)
       end
 
       # Same shape the executor produces for its own timeout, so the host sees one
@@ -299,11 +302,17 @@ module RootCause
       # No map entry means no response key. Do not parse beyond the selector,
       # touch replay, or leak which projects this shared mount serves.
       def selector_failure
+        error = SignatureError.new("signature missing or invalid")
         Reply.new(
-          status: 401,
-          body: JSON.generate(ok: false, error: {class: "bad_signature", message: "signature missing or invalid"}),
+          status: error.status,
+          body: JSON.generate(ok: false, error: error.wire_payload),
           signature: nil
         )
+      end
+
+      def action_plane_disabled
+        error = ActionPlaneDisabled.new
+        Reply.new(status: error.status, body: JSON.generate(ok: false, error: error.wire_payload), signature: nil)
       end
 
       # Customer-side audit: identifiers and shape only. Never the secret, never

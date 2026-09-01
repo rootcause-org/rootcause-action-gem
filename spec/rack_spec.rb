@@ -30,9 +30,24 @@ RSpec.describe RootCause::Embassy::RackApp do
   end
 
   it "returns 405 for a non-POST method" do
-    status, headers, = app.call(env_for(method: "GET"))
+    status, headers, body = app.call(env_for(method: "GET"))
     expect(status).to eq(405)
     expect(headers["allow"]).to eq("POST")
+    expect(JSON.parse(body.join).dig("error", "code")).to eq("METHOD_NOT_ALLOWED")
+  end
+
+  it "returns an actionable 503 when a chat-only app mounts the action route" do
+    chat_only = RootCause::Embassy::Config.new
+    chat_only.chat_secret = "chat-secret"
+    chat_only.chat_project = "example-support"
+    chat_only.logger = nil
+    chat_only.validate!
+
+    status, headers, body = described_class.new(runner: RootCause::Embassy::Runner.new(chat_only))
+      .call(env_for(method: "POST", body: "{}"))
+    expect(status).to eq(503)
+    expect(headers).not_to have_key(RootCause::Embassy::Signature::HEADER)
+    expect(JSON.parse(body.join).dig("error", "code")).to eq("ACTION_PLANE_DISABLED")
   end
 
   it "passes a bad signature through to a signed 401" do

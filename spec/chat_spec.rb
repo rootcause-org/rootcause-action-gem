@@ -71,6 +71,15 @@ RSpec.describe RootCause::Embassy::Chat do
       expect(claims.values_at("nbf", "iat", "exp")).to eq([now.to_i, now.to_i, now.to_i + 60])
     end
 
+    it "refuses a ttl above the 24-hour maximum with a typed diagnostic" do
+      expect { mint(ttl: described_class::MAX_TTL + 1) }
+        .to raise_error(RootCause::Embassy::Error) { |error|
+          expect(error.code).to eq("TOKEN_TTL_INVALID")
+          expect(error.hint).not_to be_empty
+          expect(error.docs).to end_with("#token_ttl_invalid")
+        }
+    end
+
     it "mints a fresh single-use jti every time" do
       jtis = Array.new(5) { Wire.decode_jwt(mint).last["jti"] }
       expect(jtis.uniq.size).to eq(5)
@@ -92,6 +101,7 @@ RSpec.describe RootCause::Embassy::Chat do
     it "refuses an origin that is not a bare scheme://host[:port]" do
       expect { mint(origin: "https://admin.kampadmin.be/t/heyo/admin") }.to raise_error(ArgumentError, /origin/)
       expect { mint(origin: "admin.kampadmin.be") }.to raise_error(ArgumentError, /origin/)
+      expect { mint(origin: "https://user:pass@admin.kampadmin.be") }.to raise_error(ArgumentError, /origin/)
     end
 
     it "refuses blank identity, a blank origin, and a non-positive ttl" do
@@ -161,7 +171,7 @@ RSpec.describe RootCause::Embassy::Chat do
     end
 
     it "html-escapes every attribute value so no value can break out of the tag" do
-      html = tag(config: Wire.chat_config(chat_project: %(evil" onload="x)), mode: %(p"><img src=x))
+      html = tag(config: Wire.chat_config(chat_project: %(evil" onload="x)), locale: %(nl"><img src=x))
       expect(html).to include("&quot;", "&lt;img")
       expect(html.scan("<script").size).to eq(1)
       expect(html).not_to include(%(onload="x"))
@@ -174,9 +184,25 @@ RSpec.describe RootCause::Embassy::Chat do
       )
     end
 
-    it "names the missing ENV when chat_base_url is unset" do
-      expect { tag(config: Wire.chat_config(chat_base_url: nil)) }
-        .to raise_error(ArgumentError, /ROOTCAUSE_CHAT_BASE_URL/)
+    it "defaults chat_base_url to the hosted ReplyPen origin" do
+      html = tag(config: Wire.chat_config(chat_base_url: nil))
+      expect(html).to include(%(src="https://app.replypen.com/chat/widget/v1/loader.js))
+    end
+
+    it "validates mode and target as typed integrator errors" do
+      expect { tag(mode: :drawer) }.to raise_error(RootCause::Embassy::Error) { |error|
+        expect(error.code).to eq("WIDGET_MODE_INVALID")
+      }
+      expect { tag(mode: :page) }.to raise_error(RootCause::Embassy::Error) { |error|
+        expect(error.code).to eq("WIDGET_TARGET_INVALID")
+      }
+      expect { tag(mode: :page, target: "  ") }.to raise_error(RootCause::Embassy::Error) { |error|
+        expect(error.code).to eq("WIDGET_TARGET_INVALID")
+      }
+      expect { tag(target: "#chat") }.to raise_error(RootCause::Embassy::Error) { |error|
+        expect(error.code).to eq("WIDGET_TARGET_INVALID")
+      }
+      expect(tag(mode: :bubble)).to include(%(data-rc-mode="bubble"))
     end
   end
 

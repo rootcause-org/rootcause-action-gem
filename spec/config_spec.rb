@@ -57,6 +57,7 @@ RSpec.describe RootCause::Embassy::Config do
     expect(cfg.total_deadline).to eq(22)
     expect(cfg.require_tenant_context).to be(false)
     expect(cfg.tenantless_actions).to eq([])
+    expect(cfg.chat_base_url).to eq("https://app.replypen.com")
   end
 
   it "rejects a total_deadline that does not exceed the execute timeout" do
@@ -102,15 +103,17 @@ RSpec.describe RootCause::Embassy::Config do
 
     it "refuses a half-wired chat deployment" do
       cfg = base
-      cfg.chat_base_url = "https://chat.rootcause.test"
+      cfg.chat_project = "example-support"
       expect { cfg.validate! }.to raise_error(ArgumentError, /chat_secret/)
 
       cfg.chat_secret = "webhook-secret"
-      expect { cfg.validate! }.to raise_error(ArgumentError, /chat_project/)
-
-      cfg.chat_project = "kampadmin-support"
       expect { cfg.validate! }.not_to raise_error
       expect(cfg.chat_configured?).to be(true)
+
+      cfg.chat_project = nil
+      expect { cfg.validate! }.to raise_error(RootCause::Embassy::Error) { |error|
+        expect(error.code).to eq("CHAT_PROJECT_REQUIRED")
+      }
     end
 
     it "refuses the action reverse-channel secret reused as the chat secret" do
@@ -128,10 +131,25 @@ RSpec.describe RootCause::Embassy::Config do
       expect { cfg.validate! }.to raise_error(ArgumentError, /chat_base_url/)
     end
 
-    it "mints without chat_base_url — the URL is only the widget tag's concern" do
+    it "rejects a chat_base_url with credentials or a path at boot" do
       cfg = base
       cfg.chat_secret = "webhook-secret"
-      cfg.chat_project = "kampadmin-support"
+      cfg.chat_project = "example-support"
+
+      ["https://user:pass@app.replypen.com", "https://app.replypen.com/chat"].each do |url|
+        cfg.chat_base_url = url
+        expect { cfg.validate! }.to raise_error(RootCause::Embassy::Error) { |error|
+          expect(error.code).to eq("CHAT_BASE_URL_INVALID")
+        }
+      end
+    end
+
+    it "uses the hosted ReplyPen origin when chat_base_url is omitted" do
+      cfg = base
+      cfg.chat_secret = "webhook-secret"
+      cfg.chat_project = "example-support"
+      cfg.chat_base_url = nil
+      cfg.chat_base_url ||= described_class::DEFAULT_CHAT_BASE_URL
       expect { cfg.validate! }.not_to raise_error
     end
   end
@@ -150,5 +168,17 @@ RSpec.describe RootCause::Embassy do
     }
     expect(described_class.runner).to be_a(RootCause::Embassy::Runner)
     expect(described_class.config.secret).to eq("s")
+  end
+
+  it "boots chat-only without the action plane" do
+    described_class.configure { |c|
+      c.chat_secret = "chat-secret"
+      c.chat_project = "example-support"
+      c.logger = nil
+    }
+
+    expect(described_class.config.action_plane_enabled?).to be(false)
+    token = described_class.chat_token(external_id: "user-1", kind: "app_user", origin: "https://app.example.com")
+    expect(token.split(".").length).to eq(3)
   end
 end

@@ -62,7 +62,9 @@ executor's own timeout-style failure envelope on breach. `config.timeout` (20s) 
   assurance:, tenant_hint:, source_metadata:}`: exact host field names, nils omitted, `kind` +
   `external_id` required together (raises pre-POST). Assert it from the customer app's own
   authenticated session — **never from model output**.
-- `capture_sent_message` — `metadata` is exactly `{resource_type, resource_id}` (strings).
+- `capture_sent_message` — `metadata` is exactly `{resource_type, resource_id}` (strings). It accepts
+  `answers: [{id:, values: [...] }]` with a sent body or alone; answers-only capture omits `sent` and
+  surfaces the child `analysis_id` returned by the host.
 - **Direction rule:** trigger-direction routes (`/analyses/*`) are **strict** host-side (unknown field
   → 400); the action/result direction is tolerant-inbound. Never send a speculative field outbound.
 
@@ -84,6 +86,8 @@ fiction and is deleted — the host never sent it.
 - `executor.rb`: compiled Ruby body, trusted `ENV`, invocation-scoped context, execute timeout, stdout, structured failure.
 - `client.rb`: outbound trigger + sent-message capture.
 - `config.rb`: every knob, validated fail-closed at boot.
+- `errors.rb`: typed customer diagnostics (`code`/`hint`/`docs`) plus signed refusal wire classes.
+- `chat.rb`: standalone chat with a 24-hour TTL cap, hosted base-URL default, and mode/target validation.
 - `spec/support/wire.rb`: Ruby-side host fixture builder; keep it aligned with host goldens.
 - `spec/fixtures/contract/`: vendored canonical goldens — synced from the contract hub, not hand-edited.
 
@@ -91,3 +95,4 @@ fiction and is deleted — the host never sent it.
 
 Run `bundle exec rake` (StandardRB + all RSpec). For wire changes, cover exact signed success,
 tampering, missing/malformed fields, flat context, and param/host separation.
+`Config` validates only requested planes, so chat-only configuration stays action-secret-free.

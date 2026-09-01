@@ -19,6 +19,8 @@ module RootCause
 
       # @return [Runner::Reply] a signed ack (200 ok) or a signed structured refusal
       def handle(raw_body:, signature:)
+        return action_plane_disabled unless @config.action_plane_enabled?
+
         secret = SecretSelector.for_body(@config, raw_body)
         return selector_failure unless secret
 
@@ -32,7 +34,7 @@ module RootCause
         # Expected refusals: bad signature, replay, missing fields, unconfigured
         # handler. Still signed so the host can trust the refusal.
         log_refusal(e)
-        reply(e.status, {ok: false, error: {class: e.code, message: e.message}}, secret)
+        reply(e.status, {ok: false, error: e.wire_payload}, secret)
       rescue => e
         # Fail-closed backstop. A handler exception or any unforeseen condition is a
         # signed, structured 500 — never an unsigned crash, and deliberately NOT an
@@ -40,7 +42,8 @@ module RootCause
         # again — which is exactly why ResultHandler#process is documented idempotent. Message is the class only
         # — an unexpected error's message may carry untrusted input.
         log_unexpected(e)
-        reply(500, {ok: false, error: {class: "internal_error", message: e.class.name}}, secret)
+        internal = InternalError.new(e.class.name)
+        reply(internal.status, {ok: false, error: internal.wire_payload}, secret)
       end
 
       private
@@ -133,11 +136,17 @@ module RootCause
       end
 
       def selector_failure
+        error = SignatureError.new("signature missing or invalid")
         Runner::Reply.new(
-          status: 401,
-          body: JSON.generate(ok: false, error: {class: "bad_signature", message: "signature missing or invalid"}),
+          status: error.status,
+          body: JSON.generate(ok: false, error: error.wire_payload),
           signature: nil
         )
+      end
+
+      def action_plane_disabled
+        error = ActionPlaneDisabled.new
+        Runner::Reply.new(status: error.status, body: JSON.generate(ok: false, error: error.wire_payload), signature: nil)
       end
 
       # Customer-side audit: the run id, metadata KEYS only (never values — they
@@ -207,7 +216,8 @@ module RootCause
       end
 
       def method_not_allowed
-        [405, {"content-type" => JSON_TYPE, "allow" => "POST"}, [%({"ok":false,"error":{"class":"method_not_allowed","message":"POST required"}})]]
+        error = MethodNotAllowed.new("POST required")
+        [error.status, {"content-type" => JSON_TYPE, "allow" => "POST"}, [JSON.generate(ok: false, error: error.wire_payload)]]
       end
     end
   end

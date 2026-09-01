@@ -56,7 +56,8 @@ module RootCause
       end
 
       def method_not_allowed
-        [405, {"content-type" => JSON_TYPE, "allow" => "POST"}, [%({"ok":false,"error":{"class":"method_not_allowed","message":"POST required"}})]]
+        error = MethodNotAllowed.new("POST required")
+        [error.status, {"content-type" => JSON_TYPE, "allow" => "POST"}, [JSON.generate(ok: false, error: error.wire_payload)]]
       end
     end
   end

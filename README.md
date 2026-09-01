@@ -3,13 +3,16 @@
 > **Renamed:** this gem was `rootcause-action-runner` (namespace `RootCause::ActionRunner`) ≤ 0.2.0.
 > It is now **`rootcause-embassy`** / `RootCause::Embassy` as of 0.3.0.
 
-The **Embassy** is rootcause's trusted, in-app presence inside the customer's own Rails/Rack
-runtime — the far end of the reverse channel. It **executes actions** (receives a signed,
-digest-pinned **invocation** from the rootcause host, **resolves the action's script by digest**,
-runs it **inline with a hard timeout**, returns a **signed structured result**) and **receives
-async-analysis results**, all using the customer's own env, code, and tooling. No executable code
-ever travels on the wire. This Ruby gem is the first manifestation; PHP/Node/.NET Embassies ship as
-their own per-language repos (`rootcause-embassy-<lang>`).
+The Ruby **Embassy** is rootcause's trusted, in-app presence inside your Rails/Rack runtime.
+
+It does four things:
+
+1. **Chat** — mint the short-lived token that lets a signed-in user chat with rootcause in your UI.
+2. **Actions** — receive a signed, digest-pinned invocation and run the approved script against your app.
+3. **Analysis** — ask rootcause to analyze content and receive the drafted answer later.
+4. **API** — call any rootcause API endpoint with bearer auth handled for you.
+
+No executable code travels on the wire. Runtime dependencies: Ruby standard library only.
 
 > The authoritative design is [SPEC.md](SPEC.md). The whole-plane design (host side: registry,
 > signer, confirm/execute pages, audit) lives in
@@ -22,11 +25,60 @@ their own per-language repos (`rootcause-embassy-<lang>`).
 gem "rootcause-embassy"
 ```
 
-## Configure
+## Chat quickstart
+
+Start with chat only. No action secret, fetch endpoint, or action route is required.
+`chat_base_url` defaults to `https://app.replypen.com`; the long-lived chat secret remains in your
+backend and never reaches HTML or JavaScript.
 
 ```ruby
 # config/initializers/rootcause.rb
 RootCause::Embassy.configure do |c|
+  c.chat_secret  = ENV.fetch("ROOTCAUSE_CHAT_SECRET")
+  c.chat_project = ENV.fetch("ROOTCAUSE_CHAT_PROJECT")
+  c.logger = Rails.logger
+end
+```
+
+```erb
+<%# Inside an authenticated view; identity and tenant come from server-side authorization. %>
+<div id="replypen-chat"></div>
+<%= RootCause::Embassy::Chat.widget_tag_html(
+      external_id: current_user.id.to_s,
+      kind: "app_user",
+      tenant: current_tenant&.slug,
+      origin: request.base_url,
+      mode: :page,
+      target: "#replypen-chat"
+    ).html_safe %>
+```
+
+Mint a fresh token on every render. A long-lived SPA re-mints at half-life; the loader handles
+`auth-expired` with a guarded host-page reload. Token TTL defaults to two hours and cannot exceed 24
+hours. The complete Rails controller, view, routes, and CSP checklist are in
+[`examples/rails-chat`](https://github.com/rootcause-org/rootcause-embassy-ruby/tree/main/examples/rails-chat).
+
+Setup failures are typed and safe to branch on:
+
+```ruby
+rescue RootCause::Embassy::Error => error
+  Rails.logger.warn("ReplyPen setup failed: #{error.code}")
+end
+```
+
+Meaning, self-fix steps, verification, and escalation live in the public
+[integrator guides](https://github.com/rootcause-org/rootcause-embassy/tree/main/docs/integrator).
+
+## Add actions and analysis later
+
+`configure` replaces the current configuration, so call it exactly once. To add actions to the
+chat-first setup, merge these fields into the same initializer block (the full block is shown here).
+
+```ruby
+# config/initializers/rootcause.rb
+RootCause::Embassy.configure do |c|
+  c.chat_secret  = ENV.fetch("ROOTCAUSE_CHAT_SECRET")
+  c.chat_project = ENV.fetch("ROOTCAUSE_CHAT_PROJECT")
   c.secret    = ENV.fetch("ROOTCAUSE_ACTION_SECRET") # reverse-channel HMAC secret (per project)
   c.fetch_url = "https://<rootcause>/actions/script" # script-by-digest endpoint
   c.timeout   = 20                                   # hard per-EXECUTION timeout (seconds)
@@ -123,14 +175,11 @@ follow-up sends only the new message — persist the `session_id` and pass it ba
 [docs/async-analysis-spec.md](docs/async-analysis-spec.md).
 
 ```ruby
-# config/initializers/rootcause.rb — extends the block above
-RootCause::Embassy.configure do |c|
-  # ... secret / fetch_url as above ...
-  c.trigger_url     = "https://<rootcause>/analyses/<project>" # where start_analysis POSTs
-  c.result_mount_at = "/rootcause/result"                      # route that receives async results
-  c.result_handler  = "AnalysisResultHandler"                  # String → lazy-loaded, reload-safe
-  c.max_attachment_bytes = 256 * 1024                          # per-attachment inline cap (decoded)
-end
+# Add these lines inside the single configure block above.
+c.trigger_url     = "https://<rootcause>/analyses/<project>" # where start_analysis POSTs
+c.result_mount_at = "/rootcause/result"                      # route that receives async results
+c.result_handler  = "AnalysisResultHandler"                  # String → lazy-loaded, reload-safe
+c.max_attachment_bytes = 256 * 1024                          # per-attachment inline cap (decoded)
 ```
 
 ```ruby
@@ -170,7 +219,7 @@ over-cap or malformed attachment raises `ArgumentError` before anything is sent.
 trigger, so rootcause can scope the run's data access to them:
 
 ```ruby
-principal: {kind: "probackup_user", external_id: current_user.id.to_s,
+principal: {kind: "app_user", external_id: current_user.id.to_s,
             asserted_by: "myapp", assurance: "customer_backend_session",
             tenant_hint: nil, source_metadata: nil} # nils are omitted from the wire
 ```
@@ -241,6 +290,17 @@ RootCause::Embassy.start_analysis(
 `session_id` is **opaque** to the gem — store it and forward it, never interpret it. Omit it (or pass
 `nil`) on the first turn; the host mints one and returns it in the 202.
 
+Answers may accompany a sent reply or travel alone. An answers-only capture triggers a grounded rerun
+and returns its `analysis_id` when the host accepts it:
+
+```ruby
+capture = RootCause::Embassy.capture_sent_message(
+  session_id: ticket.rc_session_id,
+  answers: [{id: "country", values: ["BE"]}]
+)
+ticket.update!(rc_analysis_id: capture.analysis_id) if capture.analysis_id
+```
+
 ## Call any rootcause endpoint (the API plane)
 
 `RootCause::Embassy.api` is a **generic** authenticated caller for rootcause's HTTP API — the same
@@ -293,18 +353,16 @@ reverse-channel one, and neither falls back to the other. All three settings are
 without chat behaves exactly as before.
 
 ```ruby
-# config/initializers/rootcause.rb — extends the block above
-RootCause::Embassy.configure do |c|
-  c.chat_secret   = ENV.fetch("ROOTCAUSE_CHAT_SECRET")   # the project's webhook_secret
-  c.chat_project  = ENV.fetch("ROOTCAUSE_CHAT_PROJECT")  # e.g. "kampadmin-support" (public)
-  c.chat_base_url = ENV.fetch("ROOTCAUSE_CHAT_BASE_URL") # e.g. "https://app.replypen.com"
-end
+# Add these lines inside the existing configure block; never call configure twice.
+c.chat_secret   = ENV.fetch("ROOTCAUSE_CHAT_SECRET")   # the project's webhook_secret
+c.chat_project  = ENV.fetch("ROOTCAUSE_CHAT_PROJECT")  # public project slug
+# c.chat_base_url = "https://app.replypen.com"          # this is already the default
 ```
 
 ```erb
 <%# app/views/…, with `include RootCause::Embassy::ChatViewHelper` in a helper %>
 <%= chat_widget_tag(external_id: current_admin_user.id,
-                    kind:        "kampadmin_admin",
+                    kind:        "app_user",
                     tenant:      ActsAsTenant.current_tenant.slug,
                     origin:      request.base_url,
                     locale:      I18n.locale,
@@ -331,8 +389,8 @@ Outside Rails (or to mint the token yourself, e.g. for a JSON endpoint that refr
 one):
 
 ```ruby
-RootCause::Embassy.chat_token(external_id: admin.id, kind: "kampadmin_admin",
-  tenant: tenant.slug, origin: "https://admin.kampadmin.be", locale: "nl", color_scheme: "light",
+RootCause::Embassy.chat_token(external_id: user.id, kind: "app_user",
+  tenant: tenant.slug, origin: "https://app.example.com", locale: "nl", color_scheme: "light",
   ttl: 7200)
 # => "eyJhbGciOiJIUzI1NiIs…"  (claims: sub/aud/iss/jti/origin/tenant/locale/color_scheme/iat/nbf/exp/principal — see SPEC.md §5b)
 ```

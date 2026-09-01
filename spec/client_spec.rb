@@ -284,6 +284,37 @@ RSpec.describe RootCause::Embassy::Client do
       ).to have_been_made
     end
 
+    it "captures answers alone and returns the spawned analysis" do
+      WebMock.stub_request(:post, Wire::SENT_MESSAGE_URL).to_return(
+        status: 202,
+        body: JSON.generate("status" => "accepted", "analysis_id" => "analysis-child-1")
+      )
+
+      result = client.capture_sent_message(
+        session_id: "sess-1",
+        answers: [{id: "country", values: ["BE"]}]
+      )
+
+      expect(result.status).to eq("accepted")
+      expect(result.analysis_id).to eq("analysis-child-1")
+      expect(
+        a_request(:post, Wire::SENT_MESSAGE_URL).with { |request|
+          body = JSON.parse(request.body)
+          !body.key?("sent") && body["answers"] == [{"id" => "country", "values" => ["BE"]}]
+        }
+      ).to have_been_made
+    end
+
+    it "refuses malformed answers before sending" do
+      stub = Wire.stub_sent_message
+      expect {
+        client.capture_sent_message(session_id: "sess-1", answers: [{id: "country", values: []}])
+      }.to raise_error(RootCause::Embassy::Error) { |error|
+        expect(error.code).to eq("SENT_MESSAGE_INVALID")
+      }
+      expect(stub).not_to have_been_requested
+    end
+
     it "returns ok with a nil id when the host echoes no body" do
       WebMock.stub_request(:post, Wire::SENT_MESSAGE_URL).to_return(status: 204, body: "")
       result = client.capture_sent_message(sent_body: "reply", session_id: "sess-1")
@@ -304,7 +335,7 @@ RSpec.describe RootCause::Embassy::Client do
       stub = Wire.stub_sent_message
       expect {
         client.capture_sent_message(sent_body: "", session_id: "sess-1")
-      }.to raise_error(ArgumentError, /sent_body is required/)
+      }.to raise_error(ArgumentError, /sent_body, answers/)
       expect(stub).not_to have_been_requested
     end
 
@@ -347,6 +378,7 @@ RSpec.describe RootCause::Embassy::Client do
           expect(line).to include("metadata_keys=[\"resource_id\", \"resource_type\"]")
           expect(line).to include("sent_bytes=17")
           expect(line).to include("proposed_bytes=13")
+          expect(line).to include("answers=0")
           expect(line).not_to include("secret reply text")
           expect(line).not_to include("SupportTicket")
           expect(line).not_to include("42")

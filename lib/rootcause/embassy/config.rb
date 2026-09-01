@@ -127,6 +127,7 @@ module RootCause
       # is unset. Reaching resolve with this URL fails opaquely; the boot guard
       # catches it eagerly when the reverse channel is active.
       PLACEHOLDER_FETCH_URL = "https://rootcause.invalid/actions/script"
+      DEFAULT_CHAT_BASE_URL = "https://app.replypen.com"
 
       def initialize
         @mount_at = "/rootcause/action"
@@ -144,40 +145,24 @@ module RootCause
         @http_read_timeout = 15
         @result_mount_at = "/rootcause/result"
         @max_attachment_bytes = 256 * 1024
+        @chat_base_url = DEFAULT_CHAT_BASE_URL
       end
 
-      # Fail closed at boot rather than on the first invocation: a missing secret
-      # or fetch_url is a deployment mistake, not a runtime condition.
+      # Each plane is optional, but a partially configured plane fails at boot.
+      # Chat-only deployments therefore need no action secret or fetch endpoint.
       def validate!
-        validate_reverse_secrets!
-        raise ArgumentError, "RootCause::Embassy: fetch_url is required" if blank?(fetch_url)
-        # When the reverse channel is active (secret present), the placeholder
-        # fetch_url is a deployment mistake (ROOTCAUSE_FETCH_URL unset) that would
-        # otherwise fail opaquely at the first resolve. Name the fix at boot. An
-        # inert app (no secret) never fetches a script, so the placeholder is fine.
-        if reverse_channel_configured? && placeholder_fetch_url?
-          raise ArgumentError,
-            "RootCause::Embassy: fetch_url is the placeholder " \
-            "(#{fetch_url}) — set ROOTCAUSE_FETCH_URL to the host's /actions/script endpoint"
-        end
-        raise ArgumentError, "RootCause::Embassy: timeout must be positive" unless timeout.to_f > 0
-        unless total_deadline.to_f > timeout.to_f
-          raise ArgumentError,
-            "RootCause::Embassy: total_deadline (#{total_deadline}) must exceed timeout (#{timeout}) — " \
-            "the execute backstop has to fire inside the invocation budget, not after it"
-        end
-        unless [true, false].include?(require_tenant_context)
-          raise ArgumentError, "RootCause::Embassy: require_tenant_context must be true or false"
-        end
-        unless tenantless_actions.is_a?(Array) &&
-            tenantless_actions.all? { |action_id| action_id.is_a?(String) && !action_id.empty? } &&
-            tenantless_actions.uniq.length == tenantless_actions.length
-          raise ArgumentError,
-            "RootCause::Embassy: tenantless_actions must be an array of unique, non-empty action ids"
-        end
+        validate_action! if action_plane_requested?
         validate_api!
         validate_chat!
         self
+      end
+
+      def action_plane_enabled? = reverse_channel_configured?
+
+      def action_plane_requested?
+        reverse_channel_configured? || !blank?(fetch_url) || !blank?(trigger_url) ||
+          !blank?(sent_message_url) || !result_handler.nil? || require_tenant_context ||
+          (tenantless_actions.respond_to?(:empty?) && !tenantless_actions.empty?)
       end
 
       # True once the API plane is wired far enough to make a call.
@@ -195,11 +180,69 @@ module RootCause
       end
 
       def outbound_secret_for(project_id)
+        unless action_plane_enabled?
+          raise Error.public(
+            "ACTION_PLANE_DISABLED",
+            "Configure ROOTCAUSE_ACTION_SECRET and ROOTCAUSE_FETCH_URL before using actions or analysis."
+          )
+        end
+
         selected = secret_for(project_id)
         return selected unless blank?(selected)
 
-        raise ArgumentError, "RootCause::Embassy: project_id is required and must select a configured reverse secret"
+        raise Error.public("ACTION_PROJECT_UNKNOWN", "Set project_id to a UUID present in the configured secrets map.")
       end
+
+      private
+
+      def validate_action!
+        validate_reverse_secrets!
+        if blank?(fetch_url)
+          raise Error.public("ACTION_FETCH_URL_REQUIRED", "Set ROOTCAUSE_FETCH_URL before enabling actions or analysis.")
+        end
+        # When the reverse channel is active (secret present), the placeholder
+        # fetch_url is a deployment mistake (ROOTCAUSE_FETCH_URL unset) that would
+        # otherwise fail opaquely at the first resolve. Name the fix at boot. An
+        # inert app (no secret) never fetches a script, so the placeholder is fine.
+        if reverse_channel_configured? && placeholder_fetch_url?
+          raise Error.public(
+            "ACTION_FETCH_URL_REQUIRED",
+            "Set ROOTCAUSE_FETCH_URL to the host's absolute script endpoint before enabling actions.",
+            "fetch_url is the placeholder #{fetch_url}"
+          )
+        end
+        unless timeout.to_f > 0
+          raise Error.public("ACTION_TIMEOUT_INVALID", "Set timeout to a positive duration shorter than total_deadline.")
+        end
+        unless total_deadline.to_f > timeout.to_f
+          raise Error.public(
+            "ACTION_DEADLINE_INVALID",
+            "Set total_deadline greater than timeout so the Embassy can refuse before the host cutoff.",
+            "total_deadline #{total_deadline} must exceed timeout #{timeout}"
+          )
+        end
+        unless clock_skew.to_f > 0
+          raise Error.public("ACTION_CLOCK_SKEW_INVALID", "Set clock_skew to a positive duration.")
+        end
+        unless [true, false].include?(require_tenant_context)
+          raise Error.public(
+            "ACTION_TENANT_CONTEXT_INVALID",
+            "Set require_tenant_context to true or false.",
+            "require_tenant_context must be true or false"
+          )
+        end
+        unless tenantless_actions.is_a?(Array) &&
+            tenantless_actions.all? { |action_id| action_id.is_a?(String) && !action_id.empty? } &&
+            tenantless_actions.uniq.length == tenantless_actions.length
+          raise Error.public(
+            "ACTION_TENANTLESS_ACTIONS_INVALID",
+            "Set tenantless_actions to unique non-empty action ids, or leave it empty.",
+            "tenantless_actions must be an array of unique, non-empty action ids"
+          )
+        end
+      end
+
+      public
 
       # The API plane is opt-in: an Embassy that sets neither attribute validates exactly as before.
       # Once ONE of them is set the deployment intends API calls, so a half-wired one is a boot-time
@@ -208,11 +251,27 @@ module RootCause
       def validate_api!
         return if blank?(api_base_url) && blank?(api_key)
 
-        raise ArgumentError, "RootCause::Embassy: api_base_url is required when api_key is set" if blank?(api_base_url)
-        raise ArgumentError, "RootCause::Embassy: api_key is required when api_base_url is set" if blank?(api_key)
+        if blank?(api_base_url)
+          raise Error.public(
+            "API_BASE_URL_REQUIRED",
+            "Set ROOTCAUSE_API_BASE_URL when ROOTCAUSE_API_KEY is configured.",
+            "api_base_url is required when api_key is set"
+          )
+        end
+        if blank?(api_key)
+          raise Error.public(
+            "API_KEY_REQUIRED",
+            "Set ROOTCAUSE_API_KEY when ROOTCAUSE_API_BASE_URL is configured.",
+            "api_key is required when api_base_url is set"
+          )
+        end
         return if %r{\Ahttps?://\S+\z}.match?(api_base_url.to_s)
 
-        raise ArgumentError, "RootCause::Embassy: api_base_url must be an absolute http(s) URL"
+        raise Error.public(
+          "API_BASE_URL_INVALID",
+          "Set ROOTCAUSE_API_BASE_URL to an absolute http or https URL.",
+          "api_base_url must be an absolute http(s) URL"
+        )
       end
 
       # True once chat is wired far enough to mint a token.
@@ -224,20 +283,23 @@ module RootCause
       # Once ANY of them is set the deployment intends chat, so a half-wired one is a boot-time
       # mistake, not a runtime surprise.
       def validate_chat!
-        return if [chat_secret, chat_project, chat_base_url].all? { |v| blank?(v) }
+        return if blank?(chat_secret) && blank?(chat_project)
 
-        raise ArgumentError, "RootCause::Embassy: chat_secret is required when chat is configured" if blank?(chat_secret)
-        raise ArgumentError, "RootCause::Embassy: chat_project is required when chat is configured" if blank?(chat_project)
+        if blank?(chat_secret)
+          raise Error.public("CHAT_SECRET_REQUIRED", "Set ROOTCAUSE_CHAT_SECRET to the project's chat signing secret.")
+        end
+        if blank?(chat_project)
+          raise Error.public("CHAT_PROJECT_REQUIRED", "Set ROOTCAUSE_CHAT_PROJECT to the public ReplyPen project slug.")
+        end
         # The two secrets are different privilege boundaries; the same value in both means one of the
         # two ENV vars is pointed at the wrong secret.
         if reverse_secrets.include?(chat_secret.to_s)
-          raise ArgumentError,
-            "RootCause::Embassy: chat_secret must differ from secret — ROOTCAUSE_CHAT_SECRET is the " \
-            "project's webhook_secret, not the action reverse-channel secret"
+          raise Error.public(
+            "CHAT_SECRET_REUSED",
+            "Use different values for ROOTCAUSE_CHAT_SECRET and ROOTCAUSE_ACTION_SECRET."
+          )
         end
-        return if blank?(chat_base_url) || %r{\Ahttps?://\S+\z}.match?(chat_base_url.to_s)
-
-        raise ArgumentError, "RootCause::Embassy: chat_base_url must be an absolute http(s) URL"
+        Chat.normalize_base_url(chat_base_url)
       end
 
       # The placeholder, by exact match OR by a host ending in `.invalid` (the
@@ -256,20 +318,30 @@ module RootCause
 
       def validate_reverse_secrets!
         if map_mode?
-          raise ArgumentError, "RootCause::Embassy: configure exactly one of secret or secrets" unless blank?(secret)
+          unless blank?(secret)
+            raise Error.public("ACTION_SECRETS_INVALID", "Configure exactly one of secret or secrets, never both.")
+          end
           unless secrets.is_a?(Hash) && !secrets.empty? &&
               secrets.all? { |project_id, value| project_uuid?(project_id) && value.is_a?(String) && !blank?(value) }
-            raise ArgumentError, "RootCause::Embassy: secrets must be a non-empty map of project UUIDs to non-blank secrets"
+            raise Error.public(
+              "ACTION_SECRETS_INVALID",
+              "Set secrets to a non-empty map of project UUIDs to non-blank action reverse secrets."
+            )
           end
           normalized = secrets.each_with_object({}) do |(project_id, value), map|
             canonical = project_id.downcase
-            raise ArgumentError, "RootCause::Embassy: secrets keys must be unique project UUIDs" if map.key?(canonical)
+            if map.key?(canonical)
+              raise Error.public("ACTION_SECRETS_INVALID", "Use unique project UUID keys in secrets.")
+            end
 
             map[canonical] = value
           end
           self.secrets = normalized
         elsif blank?(secret)
-          raise ArgumentError, "RootCause::Embassy: secret is required"
+          raise Error.public(
+            "ACTION_SECRET_REQUIRED",
+            "Set ROOTCAUSE_ACTION_SECRET, or a secrets map, before enabling actions or analysis."
+          )
         end
       end
 

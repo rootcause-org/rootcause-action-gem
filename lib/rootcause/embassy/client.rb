@@ -23,9 +23,9 @@ module RootCause
       # forward on the next turn, never interpret), and the host's queue status.
       Analysis = Struct.new(:analysis_id, :session_id, :status, keyword_init: true)
 
-      # What capture_sent_message returns: `ok` is always true on a 2xx; `id` is
-      # the host's sent_messages row id when it echoes one (nil if it doesn't).
-      SentMessage = Struct.new(:id, :ok, keyword_init: true)
+      # What capture_sent_message returns. Answers may spawn a child analysis,
+      # whose id and accepted status are returned alongside any sent-message id.
+      SentMessage = Struct.new(:id, :ok, :status, :analysis_id, keyword_init: true)
 
       def initialize(config)
         @config = config
@@ -78,7 +78,10 @@ module RootCause
       # analysis, no result handler. The host re-verifies on the RAW bytes, so the
       # payload key order here is irrelevant; only the signed bytes matter.
       #
-      # @param sent_body [String] the reply that actually left the building (required)
+      # @param sent_body [String, nil] the reply that actually left the building;
+      #   required unless answers are present
+      # @param answers [Array<Hash>] answers to a prior result's questions; valid
+      #   alone or alongside sent_body
       # @param session_id [String] the same handle passed to start_analysis (required)
       # @param proposed_body [String, nil] what rootcause proposed; omit if unknown
       # @param sender [String, nil] who sent it (agent label/name)
@@ -88,31 +91,41 @@ module RootCause
       #   thread id. Keys are logged, values never.
       # @return [SentMessage] frozen, `ok: true` (with the host's id when echoed)
       # @raise [SentMessageError] non-2xx, malformed response, or transport failure
-      # @raise [ArgumentError] missing sent_message_url, or blank sent_body/session_id
-      def capture_sent_message(sent_body:, session_id:, proposed_body: nil, sender: nil, metadata: {}, project_id: nil)
+      # @raise [ArgumentError] missing sent_message_url/session_id, no content, or malformed answers
+      def capture_sent_message(session_id:, sent_body: nil, proposed_body: nil, sender: nil, metadata: {}, answers: [], project_id: nil)
         url = @config.sent_message_url
         raise ArgumentError, "RootCause::Embassy: sent_message_url is not configured" if blank?(url)
-        raise ArgumentError, "RootCause::Embassy: sent_body is required" if blank?(sent_body)
         raise ArgumentError, "RootCause::Embassy: session_id is required" if blank?(session_id)
 
         metadata ||= {}
-        sent = {"body" => sent_body}
-        sent["sender"] = sender unless blank?(sender)
+        answers = normalize_answers(answers)
+        if blank?(sent_body) && answers.empty?
+          raise Error.public(
+            "SENT_MESSAGE_CONTENT_REQUIRED",
+            "Set sent_body, answers, or both before capturing a sent message."
+          )
+        end
+
         payload = {
           "type" => "sent_message",
-          "session_id" => session_id,
-          "sent" => sent
+          "session_id" => session_id
         }
+        unless blank?(sent_body)
+          sent = {"body" => sent_body}
+          sent["sender"] = sender unless blank?(sender)
+          payload["sent"] = sent
+        end
         # Absent `proposed` tells the host to treat the reply as pure signal.
         payload["proposed"] = {"body" => proposed_body} unless blank?(proposed_body)
         payload["metadata"] = metadata
+        payload["answers"] = answers unless answers.empty?
         payload["nonce"] = SecureRandom.uuid
         payload["issued_at"] = Time.now.utc.iso8601
         raw = JSON.generate(payload)
 
         response = post(url, raw, project_id: project_id, transport_error: SentMessageError, label: "sent-message capture")
         result = parse_sent_message(response)
-        log_sent_message(session_id, metadata, sent_body, proposed_body)
+        log_sent_message(session_id, metadata, sent_body, proposed_body, answers.length)
         result
       end
 
@@ -160,6 +173,27 @@ module RootCause
             "mime_type" => att["mime_type"],
             "content_base64" => b64
           }
+        end
+      end
+
+      def normalize_answers(answers)
+        Array(answers).each_with_index.map do |answer, index|
+          unless answer.is_a?(Hash)
+            raise Error.public("SENT_MESSAGE_INVALID", "Set each answer to an id and a non-empty string values list.")
+          end
+
+          fields = answer.each_with_object({}) { |(key, value), out| out[key.to_s] = value }
+          id = fields["id"]
+          values = fields["values"]
+          unless present?(id) && values.is_a?(Array) && !values.empty? && values.all? { |value| value.is_a?(String) }
+            raise Error.public(
+              "SENT_MESSAGE_INVALID",
+              "Set each answer to an id and a non-empty string values list.",
+              "answer #{index} is invalid"
+            )
+          end
+
+          {"id" => id.to_s, "values" => values}
         end
       end
 
@@ -227,20 +261,26 @@ module RootCause
           data = JSON.parse(body)
           id = data["sent_message_id"] || data["id"] if data.is_a?(Hash)
         end
-        SentMessage.new(id: id, ok: true).freeze
+        SentMessage.new(
+          id: id,
+          ok: true,
+          status: data.is_a?(Hash) ? data["status"] : nil,
+          analysis_id: data.is_a?(Hash) ? data["analysis_id"] : nil
+        ).freeze
       rescue JSON::ParserError
         raise SentMessageError, "sent-message capture response was not valid JSON"
       end
 
       # Customer-side audit: session_id, metadata KEYS only (never values), and the
       # body BYTE sizes — never the bodies themselves or the secret.
-      def log_sent_message(session_id, metadata, sent_body, proposed_body)
+      def log_sent_message(session_id, metadata, sent_body, proposed_body, answers_count)
         return unless @config.logger
 
         @config.logger.info(
           "[rootcause-sent-message] session_id=#{session_id} " \
           "metadata_keys=#{metadata_keys(metadata)} " \
-          "sent_bytes=#{sent_body.to_s.bytesize} proposed_bytes=#{proposed_body.to_s.bytesize}"
+          "sent_bytes=#{sent_body.to_s.bytesize} proposed_bytes=#{proposed_body.to_s.bytesize} " \
+          "answers=#{answers_count}"
         )
       end
 

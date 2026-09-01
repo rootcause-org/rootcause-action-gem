@@ -1,0 +1,5 @@
+<div id="replypen-chat" aria-label="ReplyPen chat"></div>
+<p id="replypen-status" role="status">Starting ReplyPen…</p>
+
+<%# csrf_meta_tags normally lives in the application layout and is required by the mint POST. %>
+<%= javascript_include_tag "replypen_chat", defer: true %>

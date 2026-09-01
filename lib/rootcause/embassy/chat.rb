@@ -26,6 +26,8 @@ module RootCause
       # on its own. The `jti` is single-use anyway, so this only bounds the *unopened* window.
       # The host also allows 60s clock skew.
       DEFAULT_TTL = 7200
+      MAX_TTL = 24 * 60 * 60
+      DEFAULT_BASE_URL = "https://app.replypen.com"
 
       # How the identity was established, carried through to rootcause as the principal's assurance
       # level. "customer_backend_jwt" = asserted by the customer's own authenticated server session.
@@ -59,14 +61,25 @@ module RootCause
       # @raise [ArgumentError] unconfigured chat, or a blank/malformed argument
       def token(external_id:, origin:, kind:, tenant: nil, locale: nil, color_scheme: nil, ttl: DEFAULT_TTL,
         asserted_by: nil, assurance: DEFAULT_ASSURANCE, config: Embassy.config, now: Time.now)
-        secret = presence(config.chat_secret) ||
-          raise(ArgumentError, "RootCause::Embassy: chat_secret is not configured (ROOTCAUSE_CHAT_SECRET)")
-        project = presence(config.chat_project) ||
-          raise(ArgumentError, "RootCause::Embassy: chat_project is not configured (ROOTCAUSE_CHAT_PROJECT)")
-        external_id = required(external_id, "external_id")
-        kind = required(kind, "kind")
-        ttl = Integer(ttl)
-        raise ArgumentError, "RootCause::Embassy: chat token ttl must be positive" unless ttl > 0
+        secret = presence(config.chat_secret) || raise(Error.public(
+          "CHAT_SECRET_REQUIRED", "Set ROOTCAUSE_CHAT_SECRET to the project's chat signing secret."
+        ))
+        project = presence(config.chat_project) || raise(Error.public(
+          "CHAT_PROJECT_REQUIRED", "Set ROOTCAUSE_CHAT_PROJECT to the public ReplyPen project slug."
+        ))
+        external_id = required(
+          external_id, "CHAT_EXTERNAL_ID_REQUIRED",
+          "Set external_id from the signed-in server session's stable user identifier."
+        )
+        kind = required(kind, "PRINCIPAL_REQUIRED", "Set kind to the principal kind configured for this project.")
+        ttl = begin
+          Integer(ttl)
+        rescue ArgumentError, TypeError
+          raise Error.public("TOKEN_TTL_INVALID", "Set ttl between 1 second and 24 hours; 2 hours is recommended.")
+        end
+        unless ttl.between?(1, MAX_TTL)
+          raise Error.public("TOKEN_TTL_INVALID", "Set ttl between 1 second and 24 hours; 2 hours is recommended.")
+        end
 
         issued = now.to_i
         claims = {
@@ -111,15 +124,27 @@ module RootCause
       #   data-rc-color-scheme, so the panel paints in the right scheme without a token decode first.
       def widget_tag_html(mode: nil, target: nil, locale: nil, color_scheme: nil, config: Embassy.config,
         **token_options)
-        base = presence(config.chat_base_url) ||
-          raise(ArgumentError, "RootCause::Embassy: chat_base_url is not configured (ROOTCAUSE_CHAT_BASE_URL)")
+        base = normalize_base_url(presence(config.chat_base_url) || DEFAULT_BASE_URL)
+        mode = mode.to_s
+        target = presence(target)
+        target = nil if target&.strip&.empty?
+        unless ["", "page", "bubble"].include?(mode)
+          raise Error.public(
+            "WIDGET_MODE_INVALID",
+            "Set mode to page or bubble, or leave it empty for the floating widget."
+          )
+        end
+        if (mode == "page") != !target.nil?
+          raise Error.public("WIDGET_TARGET_INVALID", "Set a non-empty target only when mode is page.")
+        end
+
         attrs = {
-          "src" => base.to_s.chomp("/") + LOADER_PATH + "?v=#{LOADER_CONTRACT}",
+          "src" => base + LOADER_PATH + "?v=#{LOADER_CONTRACT}",
           "data-rc-project" => config.chat_project.to_s,
           "data-rc-token" => token(config: config, locale: locale, color_scheme: color_scheme, **token_options)
         }
-        attrs["data-rc-mode"] = mode.to_s unless blank?(mode)
-        attrs["data-rc-target"] = target.to_s unless blank?(target)
+        attrs["data-rc-mode"] = mode unless blank?(mode)
+        attrs["data-rc-target"] = target unless blank?(target)
         attrs["data-rc-locale"] = locale.to_s unless blank?(locale)
         attrs["data-rc-color-scheme"] = color_scheme.to_s unless blank?(color_scheme)
         rendered = attrs.map { |k, v| %(#{k}="#{CGI.escapeHTML(v)}") }.join(" ")
@@ -143,23 +168,38 @@ module RootCause
       # compares this claim byte-for-byte with the request's Origin header — a near-miss here reads
       # as a forged token at runtime, far from its cause.
       def normalize_origin(origin)
-        raw = required(origin, "origin")
+        raw = required(origin, "ORIGIN_INVALID", "Set origin to the browser origin as scheme://host[:port].")
         uri = begin
           URI.parse(raw)
         rescue URI::InvalidURIError
-          raise ArgumentError, "RootCause::Embassy: chat origin is not a valid URL: #{raw.inspect}"
+          raise Error.public("ORIGIN_INVALID", "Set origin to a valid http or https scheme://host[:port].")
         end
-        unless %w[http https].include?(uri.scheme) && !blank?(uri.host) &&
+        unless %w[http https].include?(uri.scheme) && !blank?(uri.host) && uri.userinfo.nil? &&
             blank?(uri.query) && blank?(uri.fragment) && ["", "/"].include?(uri.path.to_s)
-          raise ArgumentError,
-            "RootCause::Embassy: chat origin must be scheme://host[:port] with no path, got #{raw.inspect}"
+          raise Error.public(
+            "ORIGIN_INVALID",
+            "Set origin to scheme://host[:port] without credentials, path, query, or fragment."
+          )
         end
         port = (uri.port == uri.default_port) ? "" : ":#{uri.port}"
         "#{uri.scheme}://#{uri.host.downcase}#{port}"
       end
 
-      def required(value, name)
-        presence(value) || raise(ArgumentError, "RootCause::Embassy: chat token #{name} is required")
+      def normalize_base_url(raw)
+        uri = URI.parse(raw)
+        unless %w[http https].include?(uri.scheme) && !blank?(uri.host) && uri.userinfo.nil? &&
+            blank?(uri.query) && blank?(uri.fragment) && ["", "/"].include?(uri.path.to_s)
+          raise URI::InvalidURIError
+        end
+
+        port = (uri.port == uri.default_port) ? "" : ":#{uri.port}"
+        "#{uri.scheme}://#{uri.host.downcase}#{port}"
+      rescue URI::InvalidURIError
+        raise Error.public("CHAT_BASE_URL_INVALID", "Set chat_base_url to an absolute http or https origin.")
+      end
+
+      def required(value, code, hint)
+        presence(value) || raise(Error.public(code, hint))
       end
 
       def presence(value) = blank?(value) ? nil : value.to_s

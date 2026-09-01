@@ -49,7 +49,12 @@ RSpec.describe RootCause::Embassy::ResultReceiver do
   it "rejects a forged signature with a signed 401 (and never dispatches)" do
     reply = handle(Wire.result, secret: "wrong")
     expect(reply.status).to eq(401)
-    expect(body_of(reply).dig("error", "class")).to eq("bad_signature")
+    expect(body_of(reply).fetch("error")).to include(
+      "class" => "bad_signature",
+      "code" => "BAD_SIGNATURE",
+      "hint" => a_kind_of(String),
+      "docs" => a_string_ending_with("#bad_signature")
+    )
     expect(SpecResultHandler.store).to be_empty
     expect(RootCause::Embassy::Signature.valid?(reply.signature, reply.body, secret: Wire::SECRET)).to be(true)
   end

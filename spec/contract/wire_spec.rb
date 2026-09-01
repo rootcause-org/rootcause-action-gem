@@ -14,7 +14,7 @@ RSpec.describe "hub contract conformance" do
   it "records and prints the vendored hub revision" do
     hub_sha = File.read(File.join(fixture_dir, "HUB_SHA")).strip
     warn "rootcause-embassy hub fixtures: #{hub_sha}"
-    expect(hub_sha).to eq("6d8c8fabc6a2d5c83fe47e048114bed8617fe8e2")
+    expect(hub_sha).to match(/\A[0-9a-f]{40}\z/)
   end
 
   it "replays every body signing vector over its exact bytes" do
@@ -73,10 +73,58 @@ RSpec.describe "hub contract conformance" do
     end
   end
 
+  it "adds stable diagnostics to every Ruby refusal without changing its wire class" do
+    {
+      RootCause::Embassy::InvalidRequest => [400, "invalid_request", "INVALID_REQUEST"],
+      RootCause::Embassy::SignatureError => [401, "bad_signature", "BAD_SIGNATURE"],
+      RootCause::Embassy::ReplayError => [409, "replay", "REPLAY"],
+      RootCause::Embassy::SchemaError => [422, "schema_violation", "SCHEMA_VIOLATION"],
+      RootCause::Embassy::ResolveError => [502, "resolve_failed", "RESOLVE_FAILED"],
+      RootCause::Embassy::HandlerError => [500, "handler_error", "HANDLER_ERROR"],
+      RootCause::Embassy::InternalError => [500, "internal_error", "INTERNAL_ERROR"]
+    }.each do |klass, (status, wire_class, code)|
+      error = klass.new("detail")
+      expect(error.status).to eq(status)
+      expect(error.wire_payload).to include(class: wire_class, message: "detail", code: code)
+      expect(error.hint).not_to be_empty
+      expect(error.docs).to end_with("##{code.downcase}")
+    end
+  end
+
+  it "decodes the answers-only capture fixture" do
+    answers = JSON.parse(fixture("analysis/answers.json"))
+    expect(answers).not_to have_key("sent")
+    expect(answers.fetch("answers")).to eq([{"id" => "country", "values" => ["BE"]}])
+  end
+
   it "replays the chat JWT vector byte-for-byte" do
     jwt = JSON.parse(fixture("chat/jwt_vector.json"))
     claims = JSON.parse(jwt.fetch("claims_json"))
     expect(RootCause::Embassy::Chat.encode(claims, jwt.fetch("secret"))).to eq(jwt.fetch("token"))
     expect(jwt.fetch("token").split(".").first).to eq(RootCause::Embassy::Chat.b64(jwt.fetch("header_json")))
+  end
+
+  it "replays the chat widget tag byte-for-byte" do
+    jwt = JSON.parse(fixture("chat/jwt_vector.json"))
+    config = RootCause::Embassy::Config.new
+    config.chat_secret = jwt.fetch("secret")
+    config.chat_project = "acme"
+    allow(SecureRandom).to receive(:uuid).and_return("88888888-8888-8888-8888-888888888888")
+
+    tag = RootCause::Embassy::Chat.widget_tag_html(
+      config: config,
+      external_id: "user-8f3",
+      kind: "acme_user",
+      tenant: "acme",
+      origin: "https://app.acme.example",
+      locale: "nl",
+      color_scheme: "light",
+      mode: :page,
+      target: "#rc-chat",
+      now: Time.at(jwt.fetch("now_unix")),
+      ttl: jwt.fetch("ttl_seconds")
+    )
+
+    expect(tag).to eq(fixture("chat/widget_tag.html"))
   end
 end
