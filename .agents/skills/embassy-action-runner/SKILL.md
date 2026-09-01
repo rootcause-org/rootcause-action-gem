@@ -46,8 +46,9 @@ derives its tenant from the target record; partial tuples always refuse, and com
 valid. The executor removes stale `RC_TENANT_*` first and installs only
 non-empty trusted values, so flat/missing scope stays absent. Reserve both tenant field names and
   `RC_TENANT_*` names from action schemas. The optional principal requires non-empty `kind` and
-  `external_id`, plus typed named claims; reserve `principal_kind`, `principal_external_id`, and every
-  `RC_PRINCIPAL_*` spelling. The executor clears inherited `RC_PRINCIPAL_*`, exposes a signed principal
+  `external_id`, plus a claims object (which may be empty) of typed named claims; reserve
+  `principal_kind`, `principal_external_id`, every `principal_claim_*`, and every `RC_PRINCIPAL_*`
+  spelling. The executor clears inherited `RC_PRINCIPAL_*`, exposes a signed principal
   only for its action, then restores the prior process environment. Validate bound ids as non-nil UUIDs,
   slugs with the host's canonical slug rule, and all env-bound values as NUL-free before resolving the script.
 
@@ -81,7 +82,8 @@ fiction and is deleted — the host never sent it.
 - `runner.rb`: authenticated invocation pipeline, trusted host-field validation, total deadline.
 - `result_rack.rb`: result route core + Rack shell; idempotent redelivery ack.
 - `replay.rb`: ±5 min window, nonce store (`guard!` raises / `fresh?` reports), `MemoryStore`.
-- `schema.rb`: action param contract and reserved tenant/principal selectors.
+- `schema.rb`: action param contract and reserved tenant/principal selectors (including
+  `principal_claim_*`).
 - `resolver.rb`: signed script fetch + digest verification/cache.
 - `executor.rb`: compiled Ruby body, trusted `ENV`, invocation-scoped context, execute timeout, stdout, structured failure.
 - `client.rb`: outbound trigger + sent-message capture.
@@ -89,7 +91,8 @@ fiction and is deleted — the host never sent it.
 - `errors.rb`: typed customer diagnostics (`code`/`hint`/`docs`) plus signed refusal wire classes.
 - `chat.rb`: standalone chat with a 24-hour TTL cap, hosted base-URL default, and mode/target validation.
 - `spec/support/wire.rb`: Ruby-side host fixture builder; keep it aligned with host goldens.
-- `spec/fixtures/contract/`: vendored canonical goldens — synced from the contract hub, not hand-edited.
+- `spec/fixtures/contract/`: vendored canonical goldens — synced wholesale from the contract hub,
+  with the source revision recorded in `HUB_SHA`, not hand-edited.
 
 ## Verification
 

@@ -88,6 +88,17 @@ RSpec.describe RootCause::Embassy::Runner do
     original&.each { |key, value| ENV[key] = value }
   end
 
+  it "accepts a principal whose claims object is empty" do
+    script = 'ENV.values_at("RC_PRINCIPAL_KIND", "RC_PRINCIPAL_EXTERNAL_ID", "RC_PRINCIPAL_CLAIM_ANY")'
+    Wire.stub_fetch(script: script)
+    principal = {"kind" => "acme_user", "external_id" => "user-8f3", "claims" => {}}
+
+    reply = handle(Wire.invocation(script: script, principal: principal))
+
+    expect(reply.status).to eq(200)
+    expect(body_of(reply)["return_value"]).to eq(["acme_user", "user-8f3", nil])
+  end
+
   it "clears inherited principal environment for a principal-less invocation" do
     original = ENV.to_h.select { |key, _value| key.start_with?("RC_PRINCIPAL_") }
     ENV["RC_PRINCIPAL_KIND"] = "stale-kind"

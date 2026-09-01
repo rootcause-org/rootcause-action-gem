@@ -36,8 +36,8 @@
       "direction": "host->embassy",
       "secret": "contract-reverse-secret",
       "body_bytes": 605,
-      "body_sha256": "6a7e94e6c5902c3a221f1c1c8ad7acdef0fe93b01431609ce388171d541a2977",
-      "signature": "sha256=4ac88d4d55d66f9e032e678add47abc7c5ceddce7f6a23ce6c9ba16f703f69e1",
+      "body_sha256": "a846643d25e02675f31dadcb029f118075696ab86d4d17ade3d3da4cd7ea8a7c",
+      "signature": "sha256=f7de1ed013d9e3b4f828019d367bac3846c2889388167cca8f3980d15eac1da5",
       "note": "optional host-resolved principal context"
     },
     {

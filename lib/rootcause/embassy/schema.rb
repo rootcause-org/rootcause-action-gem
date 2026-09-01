@@ -131,7 +131,7 @@ module RootCause
       def reserved_context_param?(name)
         normalized = name.downcase
         RESERVED_CONTEXT_PARAMS.include?(normalized) ||
-          normalized.start_with?("rc_tenant_", "rc_principal_")
+          normalized.start_with?("rc_tenant_", "rc_principal_", "principal_claim_")
       end
 
       def stringify_keys(hash)

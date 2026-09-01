@@ -199,8 +199,8 @@ idempotent signed `200 {"ok":true}` ack. A stale `issued_at` is a 409 on both.
 Flat projects omit all three tenant fields so their signed bytes stay backward-compatible. A bound
 invocation requires `tenant_id` and `tenant_slug` together; `tenant_scope_value` may be absent/empty.
 They are trusted because the host stamps them outside model-authored params and signs the exact body.
-`tenant_id`, `tenant_slug`, `tenant_scope_value`, `principal_kind`, `principal_external_id`, and their
-`RC_TENANT_*` / `RC_PRINCIPAL_*` spellings are reserved param names: params can select only an in-scope
+`tenant_id`, `tenant_slug`, `tenant_scope_value`, `principal_kind`, `principal_external_id`, any
+`principal_claim_*`, and their `RC_TENANT_*` / `RC_PRINCIPAL_*` spellings are reserved param names: params can select only an in-scope
 target, never assert host context. An optional `principal` has non-empty `kind` and `external_id` plus an
 object of named typed claims; malformed or partial context refuses. A tenant-enabled Embassy deployment
 must set `require_tenant_context = true`, making an absent tuple a hard refusal before script resolution
