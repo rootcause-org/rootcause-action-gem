@@ -14,7 +14,7 @@ RSpec.describe "hub contract conformance" do
   it "records and prints the vendored hub revision" do
     hub_sha = File.read(File.join(fixture_dir, "HUB_SHA")).strip
     warn "rootcause-embassy hub fixtures: #{hub_sha}"
-    expect(hub_sha).to eq("75524ff8e4ecf912af8619e70bce5418406f4f6a")
+    expect(hub_sha).to eq("af5ad4134256de626117d0ee0514f27a87c05c65")
   end
 
   it "replays every body signing vector over its exact bytes" do

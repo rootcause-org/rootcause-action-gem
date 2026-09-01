@@ -135,9 +135,9 @@
       "file": "analysis/trigger_with_principal.json",
       "direction": "embassy->host",
       "secret": "contract-reverse-secret",
-      "body_bytes": 536,
-      "body_sha256": "6b8879631ebdccacd3fc7043919723a34620db6041bf491c959c9a6c54283193",
-      "signature": "sha256=f4410c09bb8bd5434491eae9e48bb4c490c7ada4710e2bdbf75aba3e8adab618",
+      "body_bytes": 525,
+      "body_sha256": "e09476d70bf647133df3c0a338be66904a4929ab41732bd6451c4f3220a2b4d2",
+      "signature": "sha256=837ac4bf3e4dbf4939f4dcf2698c11e55f28c391372e6f2c034fa08a219336bd",
       "note": ""
     },
     {

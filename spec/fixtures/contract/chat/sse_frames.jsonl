@@ -1,0 +1,14 @@
+{"messageId":"11111111-2222-4333-8444-555555555555","type":"start"}
+{"type":"start-step"}
+{"data":{"label":"Reading the orders table","tool":"bash","state":"running"},"id":"st_11111111","type":"data-status"}
+{"data":{"label":"Reading the orders table","tool":"bash","state":"done"},"id":"st_11111111","type":"data-status"}
+{"id":"t_11111111","type":"text-start"}
+{"delta":"Your last invoice is **INV-1042**.","id":"t_11111111","type":"text-delta"}
+{"id":"t_11111111","type":"text-end"}
+{"data":{"question_set_id":"qs_11111111","questions":[{"allow_other":true,"id":"period","kind":"single_select","options":[{"label":"Last month","value":"last_month"},{"label":"Last year","value":"last_year"}],"prompt":"Which period?","required":true}]},"id":"qs_11111111","type":"data-questions"}
+{"data":{"proposal_id":"22222222-3333-4444-8555-666666666666","status":"proposed","key":"channel.chat_mode","field_label":"Chat mode","operation":"set","target_level":"project","target_id":"33333333-4444-4555-8666-777777777777","target_name":"acme","current_raw":"consumer","current_effective":"consumer","current_source":"default","proposed_value":"power","impact_summary":"Admins get the investigative posture; end users are unaffected."},"id":"sc_11111111","type":"data-settings-change"}
+{"data":{"action_run_id":"77777777-8888-4999-8aaa-bbbbbbbbbbbb","action_id":"send_invoice","label":"Send invoice","summary":"Send invoice INV-1042","color":"#2563eb","status":"proposed"},"id":"ac_77777777","type":"data-action-confirm"}
+{"data":[{"attachment_id":"att_11111111","filename":"invoices.csv","mime_type":"text/csv","size_bytes":2048}],"id":"f_11111111","type":"data-files"}
+{"errorText":"Sorry, I couldn't complete that just now. Please try again.","type":"error"}
+{"type":"finish-step"}
+{"type":"finish"}
