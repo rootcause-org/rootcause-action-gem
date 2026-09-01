@@ -53,6 +53,56 @@ RSpec.describe RootCause::Embassy::Runner do
     )
   end
 
+  it "exposes a signed principal only for its action invocation" do
+    original = ENV.to_h.select { |key, _value| key.start_with?("RC_PRINCIPAL_") }
+    ENV["RC_PRINCIPAL_KIND"] = "stale-kind"
+    ENV["RC_PRINCIPAL_STALE"] = "stale-value"
+    script = <<~RUBY
+      {
+        kind: ENV.fetch("RC_PRINCIPAL_KIND"),
+        external_id: ENV.fetch("RC_PRINCIPAL_EXTERNAL_ID"),
+        user_id: ENV.fetch("RC_PRINCIPAL_CLAIM_USER_ID"),
+        person_id: ENV.fetch("RC_PRINCIPAL_CLAIM_PERSON_ID"),
+        backup_ids: ENV.fetch("RC_PRINCIPAL_CLAIM_BACKUP_IDS"),
+        stale: ENV["RC_PRINCIPAL_STALE"]
+      }
+    RUBY
+    principal = {
+      "kind" => "acme_user",
+      "external_id" => "user-8f3",
+      "claims" => {"user_id" => "user-8f3", "person_id" => 103, "backup_ids" => %w[backup-7 backup-9]}
+    }
+    Wire.stub_fetch(script: script)
+
+    reply = handle(Wire.invocation(script: script, principal: principal))
+
+    expect(body_of(reply)["return_value"]).to eq(
+      "kind" => "acme_user", "external_id" => "user-8f3", "user_id" => "user-8f3",
+      "person_id" => "103", "backup_ids" => '["backup-7","backup-9"]', "stale" => nil
+    )
+    expect(ENV.to_h.select { |key, _value| key.start_with?("RC_PRINCIPAL_") }).to eq(original.merge(
+      "RC_PRINCIPAL_KIND" => "stale-kind", "RC_PRINCIPAL_STALE" => "stale-value"
+    ))
+  ensure
+    ENV.keys.grep(/\ARC_PRINCIPAL_/).each { |key| ENV.delete(key) }
+    original&.each { |key, value| ENV[key] = value }
+  end
+
+  it "clears inherited principal environment for a principal-less invocation" do
+    original = ENV.to_h.select { |key, _value| key.start_with?("RC_PRINCIPAL_") }
+    ENV["RC_PRINCIPAL_KIND"] = "stale-kind"
+    ENV["RC_PRINCIPAL_CLAIM_USER_ID"] = "stale-user"
+    script = "ENV.keys.grep(/\\ARC_PRINCIPAL_/).sort"
+    Wire.stub_fetch(script: script)
+    invocation = Wire.invocation(script: script)
+    invocation.delete("principal")
+
+    expect(body_of(handle(invocation))["return_value"]).to eq([])
+  ensure
+    ENV.keys.grep(/\ARC_PRINCIPAL_/).each { |key| ENV.delete(key) }
+    original&.each { |key, value| ENV[key] = value }
+  end
+
   it "rejects a tenant field tampered after signing and never resolves the script" do
     inv = Wire.invocation
     raw = JSON.generate(inv)
@@ -171,6 +221,26 @@ RSpec.describe RootCause::Embassy::Runner do
 
     expect(reply.status).to eq(422)
     expect(body_of(reply).dig("error", "message")).to include("host-owned")
+    expect(fetch).not_to have_been_requested
+  end
+
+  it "rejects malformed signed principal context before resolution" do
+    invalid_principals = [
+      {},
+      {"kind" => "acme_user", "external_id" => "user-8f3"},
+      {"kind" => "", "external_id" => "user-8f3", "claims" => {}},
+      {"kind" => "acme_user", "external_id" => "user\0-8f3", "claims" => {}},
+      {"kind" => "acme_user", "external_id" => "user-8f3", "claims" => {"BadName" => "x"}},
+      {"kind" => "acme_user", "external_id" => "user-8f3", "claims" => {"role" => true}},
+      {"kind" => "acme_user", "external_id" => "user-8f3", "claims" => {"roles" => ["user", 1]}}
+    ]
+    fetch = Wire.stub_fetch(script: "{ ok: true }")
+
+    invalid_principals.each do |principal|
+      reply = handle(Wire.invocation(principal: principal, dry_run: true))
+      expect(reply.status).to eq(400)
+      expect(body_of(reply).dig("error", "class")).to eq("invalid_request")
+    end
     expect(fetch).not_to have_been_requested
   end
 

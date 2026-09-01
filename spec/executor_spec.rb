@@ -46,27 +46,33 @@ RSpec.describe RootCause::Embassy::Executor do
     end
   end
 
-  it "restores trusted tenant environment after an action raises" do
-    original_present = ENV.key?("RC_TENANT_SLUG")
-    original_value = ENV["RC_TENANT_SLUG"]
+  it "restores trusted context after an action raises" do
+    original = ENV.to_h.select { |key, _value| key.start_with?("RC_TENANT_", "RC_PRINCIPAL_") }
     ENV.delete("RC_TENANT_SLUG")
+    ENV["RC_PRINCIPAL_KIND"] = "stale-kind"
+    ENV["RC_PRINCIPAL_UNKNOWN"] = "stale-value"
     trusted_env = {
       "RC_TENANT_ID" => Wire::TENANT_ID,
       "RC_TENANT_SLUG" => Wire::TENANT_SLUG,
-      "RC_TENANT_SCOPE_VALUE" => Wire::TENANT_SCOPE_VALUE
+      "RC_TENANT_SCOPE_VALUE" => Wire::TENANT_SCOPE_VALUE,
+      "RC_PRINCIPAL_KIND" => "acme_user",
+      "RC_PRINCIPAL_CLAIM_USER_ID" => "user-8f3"
     }
 
     result = executor.run(
-      script: "raise ENV.fetch('RC_TENANT_SLUG')",
+      script: "raise [ENV.fetch('RC_TENANT_SLUG'), ENV.fetch('RC_PRINCIPAL_KIND')].join(':')",
       params: {},
-      digest: Wire.digest_of("raise ENV.fetch('RC_TENANT_SLUG')"),
+      digest: Wire.digest_of("raise [ENV.fetch('RC_TENANT_SLUG'), ENV.fetch('RC_PRINCIPAL_KIND')].join(':')"),
       trusted_env: trusted_env
     )
 
-    expect(result.error[:message]).to eq(Wire::TENANT_SLUG)
+    expect(result.error[:message]).to eq("#{Wire::TENANT_SLUG}:acme_user")
     expect(ENV).not_to have_key("RC_TENANT_SLUG")
+    expect(ENV["RC_PRINCIPAL_KIND"]).to eq("stale-kind")
+    expect(ENV["RC_PRINCIPAL_UNKNOWN"]).to eq("stale-value")
   ensure
-    original_present ? ENV["RC_TENANT_SLUG"] = original_value : ENV.delete("RC_TENANT_SLUG")
+    ENV.keys.grep(/\ARC_(?:TENANT|PRINCIPAL)_/).each { |key| ENV.delete(key) }
+    original&.each { |key, value| ENV[key] = value }
   end
 
   it "supports an early `return` from the body (lambda semantics)" do

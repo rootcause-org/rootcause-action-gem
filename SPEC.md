@@ -79,7 +79,7 @@ A single mounted handler does exactly this, fail-closed at every step:
    always refuse.
 4. **Validate params** against the `schema` carried in the invocation (defense in depth — rootcause
    already validated at propose-time). Types: `string`, `integer`, `number`, `boolean`, `string[]`.
-   Tenant selector names are reserved and rejected in both params and schema.
+   Tenant and principal selector names are reserved and rejected in both params and schema.
 5. **Resolve the script by digest:**
    - **Cache hit** — a cached `script.rb` whose `sha256 == script_digest` → use it.
    - **Cache miss** — `GET {fetch_url}?action_id=…&digest=…` (signed the same way), **verify
@@ -87,8 +87,9 @@ A single mounted handler does exactly this, fail-closed at every step:
      refuse, fail closed.
 6. **Bind + execute** — params as a **frozen, symbol-keyed hash**, passed **as data, never
    interpolated into source**. Install the trusted context as `RC_TENANT_ID`, `RC_TENANT_SLUG`, and
-   `RC_TENANT_SCOPE_VALUE` only for the serialized execution (non-empty fields only), removing stale
-   values first and restoring process `ENV` afterward.
+   `RC_TENANT_SCOPE_VALUE` plus optional `RC_PRINCIPAL_KIND`, `RC_PRINCIPAL_EXTERNAL_ID`, and typed
+   `RC_PRINCIPAL_CLAIM_*` values only for the serialized execution, removing stale values first and
+   restoring process `ENV` afterward.
    Compile the body once into a callable that receives `params`; its last expression is the
    (JSON-serializable) return value.
 7. **Hard timeout** + **rescue everything** → structured `error{class, message, backtrace}`.
@@ -148,6 +149,8 @@ signed with the reverse-channel secret, verify-on-raw, constant-time:
   "tenant_id":     "uuid",                       // host-stamped; omitted on a flat run
   "tenant_slug":   "acme",                       // host-stamped; omitted on a flat run
   "tenant_scope_value": "tenant-acme",           // host-stamped; optional/empty
+  "principal": { "kind": "acme_user", "external_id": "user-8f3",
+                 "claims": { "user_id": "user-8f3", "backup_ids": ["backup-7"] } },
   "nonce":         "uuid",                          // replay id
   "issued_at":     "2026-06-03T10:00:00Z"          // ±5 min window
 }
@@ -186,11 +189,13 @@ idempotent signed `200 {"ok":true}` ack. A stale `issued_at` is a 409 on both.
 Flat projects omit all three tenant fields so their signed bytes stay backward-compatible. A bound
 invocation requires `tenant_id` and `tenant_slug` together; `tenant_scope_value` may be absent/empty.
 They are trusted because the host stamps them outside model-authored params and signs the exact body.
-`tenant_id`, `tenant_slug`, `tenant_scope_value`, and their `RC_TENANT_*` spellings are reserved param
-names: params can select only an in-tenant target, never the tenant itself. A tenant-enabled Embassy
-deployment must set `require_tenant_context = true`, making an absent tuple a hard refusal before script
-resolution unless the signed action id is in `tenantless_actions`; partial tuples still refuse. Flat
-deployments retain the default `false`.
+`tenant_id`, `tenant_slug`, `tenant_scope_value`, `principal_kind`, `principal_external_id`, and their
+`RC_TENANT_*` / `RC_PRINCIPAL_*` spellings are reserved param names: params can select only an in-scope
+target, never assert host context. An optional `principal` has non-empty `kind` and `external_id` plus an
+object of named typed claims; malformed or partial context refuses. A tenant-enabled Embassy deployment
+must set `require_tenant_context = true`, making an absent tuple a hard refusal before script resolution
+unless the signed action id is in `tenantless_actions`; partial tuples still refuse. Flat deployments
+retain the default `false`.
 
 ### 5b. Embedded-chat token (gem → browser → host)
 
@@ -280,8 +285,11 @@ runs a body **iff** its hash equals the digest in the signed invocation.
   hash. A param value like `"; system('rm -rf /')"` must be inert — a string, never evaluated.
 - **Tenant scope is not a param.** Read trusted scope from `RC_TENANT_ID`, `RC_TENANT_SLUG`, or
   `RC_TENANT_SCOPE_VALUE`; every tenant-aware write must scope itself with the applicable field.
-- **`ENV` is process-global.** The executor serializes action bodies while `RC_TENANT_*` is installed,
-  then restores the prior values even on timeout/error so concurrent runs cannot cross tenant context.
+- **Principal context is not a param.** `RC_PRINCIPAL_KIND`, `RC_PRINCIPAL_EXTERNAL_ID`, and typed
+  `RC_PRINCIPAL_CLAIM_*` values are host-signed and only exist while that action runs.
+- **`ENV` is process-global.** The executor serializes action bodies while trusted `RC_TENANT_*` and
+  `RC_PRINCIPAL_*` context is installed, then restores prior values even on timeout/error so concurrent
+  runs cannot cross context.
 - **Fail closed everywhere:** bad signature, stale/duplicate nonce, schema violation, digest mismatch,
   fetch non-2xx → refuse, return a structured error, log it.
 - **Secrets never in logs / argv / responses.** Log param **keys** only.
@@ -340,7 +348,7 @@ rootcause-embassy-ruby/
 | **Schema** | each type (`string`/`integer`/`number`/`boolean`/`string[]`); missing required → reject; wrong type → reject. |
 | **Resolve-by-digest** | cache hit uses cached body; cache miss → fetch + verify; **digest mismatch → hard refuse** (never runs). |
 | **Param binding is data** | a param value `"; system('x')"` cannot execute — it is an inert string. |
-| **Tenant trust** | signed context reaches `RC_TENANT_*`; tampering fails signature; partial/malformed bound fields refuse; flat runs clear tenant env; tenant selector params refuse. |
+| **Trusted context** | signed tenant and optional principal context reach only the action; malformed context refuses; principal-less runs clear `RC_PRINCIPAL_*`; reserved selectors refuse. |
 | **Timeout** | a hanging body is killed by the hard timeout and returns a structured error; an invocation exceeding `total_deadline` returns the same signed timeout-style failure. |
 | **Errors** | any raised exception → structured `error{class, message, backtrace}`; return value must be JSON-able (non-serializable → error). |
 | **Logging** | logs `action_id`/`digest`/param **keys**/`ok`/`duration_ms`; never the secret or param values. |

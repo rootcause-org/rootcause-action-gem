@@ -31,6 +31,16 @@
       "note": ""
     },
     {
+      "name": "invocation_principal",
+      "file": "actions/invocation_principal.json",
+      "direction": "host->embassy",
+      "secret": "contract-reverse-secret",
+      "body_bytes": 605,
+      "body_sha256": "6a7e94e6c5902c3a221f1c1c8ad7acdef0fe93b01431609ce388171d541a2977",
+      "signature": "sha256=4ac88d4d55d66f9e032e678add47abc7c5ceddce7f6a23ce6c9ba16f703f69e1",
+      "note": "optional host-resolved principal context"
+    },
+    {
       "name": "invocation_dry_run",
       "file": "actions/invocation_dry_run.json",
       "direction": "host->embassy",

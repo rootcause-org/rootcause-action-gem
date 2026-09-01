@@ -21,9 +21,9 @@ module RootCause
     # (present in the invocation but absent from the schema) are rejected.
     module Schema
       TYPES = %w[string integer number boolean string[]].freeze
-      RESERVED_TENANT_PARAMS = %w[
+      RESERVED_CONTEXT_PARAMS = %w[
         tenant_id tenant_slug tenant_scope_value
-        rc_tenant_id rc_tenant_slug rc_tenant_scope_value
+        principal_kind principal_external_id
       ].freeze
 
       module_function
@@ -38,11 +38,9 @@ module RootCause
 
         specs = normalize(schema)
         params = stringify_keys(params)
-        reserved = (params.keys + specs.keys).uniq.select do |name|
-          RESERVED_TENANT_PARAMS.include?(name.downcase)
-        end
+        reserved = (params.keys + specs.keys).uniq.select { |name| reserved_context_param?(name) }
         unless reserved.empty?
-          raise SchemaError, "tenant scope is host-owned; reserved param(s): #{reserved.sort.join(", ")}"
+          raise SchemaError, "trusted context is host-owned; reserved param(s): #{reserved.sort.join(", ")}"
         end
 
         unknown = params.keys - specs.keys
@@ -129,6 +127,12 @@ module RootCause
       end
 
       def boolean?(value) = value == true || value == false
+
+      def reserved_context_param?(name)
+        normalized = name.downcase
+        RESERVED_CONTEXT_PARAMS.include?(normalized) ||
+          normalized.start_with?("rc_tenant_", "rc_principal_")
+      end
 
       def stringify_keys(hash)
         hash.each_with_object({}) { |(k, v), acc| acc[k.to_s] = v }

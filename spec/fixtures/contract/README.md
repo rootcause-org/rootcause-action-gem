@@ -39,6 +39,7 @@ signing_vectors.json                    every HMAC vector + the script-fetch que
 actions/
   invocation_flat.json                  no tenant tuple, no dry_run (dry_run emitted iff true)
   invocation_tenant.json                full tenant tuple
+  invocation_principal.json             tenant tuple + host-stamped principal and typed claims
   invocation_dry_run.json               dry_run: true
   script_fetch_query.txt                the RAW query string the GET signature covers
   health_query.txt                      map-mode health GET raw query
@@ -85,5 +86,8 @@ the spine.
    before the signature.
 7. **Replay** — a duplicate nonce is `409` on the action route; on the result route it is a `200` ack
    after a successful dispatch, and a real re-dispatch after a failed one (the nonce is released).
+8. **Principal** — decode the optional action principal, expose its identity and typed claims only to
+   the action invocation, strip inherited `RC_PRINCIPAL_*`, and keep accepting the principal-less
+   fixtures unchanged.
 
 Record the hub commit SHA you vendored from, and print it in the suite's output.

@@ -14,7 +14,7 @@ RSpec.describe "hub contract conformance" do
   it "records and prints the vendored hub revision" do
     hub_sha = File.read(File.join(fixture_dir, "HUB_SHA")).strip
     warn "rootcause-embassy hub fixtures: #{hub_sha}"
-    expect(hub_sha).to eq("af5ad4134256de626117d0ee0514f27a87c05c65")
+    expect(hub_sha).to eq("6d8c8fabc6a2d5c83fe47e048114bed8617fe8e2")
   end
 
   it "replays every body signing vector over its exact bytes" do
@@ -38,12 +38,18 @@ RSpec.describe "hub contract conformance" do
   it "decodes action and analysis envelopes with their complete mapped surface" do
     flat = JSON.parse(fixture("actions/invocation_flat.json"))
     tenant = JSON.parse(fixture("actions/invocation_tenant.json"))
+    principal = JSON.parse(fixture("actions/invocation_principal.json")).fetch("principal")
     callback = JSON.parse(fixture("analysis/result_callback.json"))
     result = RootCause::Embassy::Result.from_payload(callback)
 
     expect(flat.fetch("project_id")).to match(/\A[0-9a-f-]{36}\z/)
     expect(flat).not_to have_key("dry_run")
     expect(tenant.slice("tenant_id", "tenant_slug")).to include("tenant_id" => "22222222-2222-2222-2222-222222222222", "tenant_slug" => "acme")
+    expect(principal).to eq(
+      "kind" => "acme_user",
+      "external_id" => "user-8f3",
+      "claims" => {"user_id" => "user-8f3", "person_id" => 103, "backup_ids" => %w[backup-7 backup-9]}
+    )
     expect(result.note).to include("run trace")
     expect(result.actions.first[:slug]).not_to be_empty
     expect(result.executed_actions.first[:slug]).not_to be_empty

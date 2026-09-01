@@ -22,7 +22,10 @@ module RootCause
     # (Timeout can fire mid-transaction — actions must be idempotent/retry-safe).
     class Executor
       Result = Struct.new(:ok, :return_value, :error, :stdout, :duration_ms, keyword_init: true)
-      TRUSTED_ENV_KEYS = %w[RC_TENANT_ID RC_TENANT_SLUG RC_TENANT_SCOPE_VALUE].freeze
+      TENANT_ENV_KEYS = %w[RC_TENANT_ID RC_TENANT_SLUG RC_TENANT_SCOPE_VALUE].freeze
+      PRINCIPAL_ENV_KEYS = %w[RC_PRINCIPAL_KIND RC_PRINCIPAL_EXTERNAL_ID].freeze
+      PRINCIPAL_CLAIM_ENV_PATTERN = /\ARC_PRINCIPAL_CLAIM_[A-Z][A-Z0-9_]*\z/
+      TRUSTED_ENV_KEYS = (TENANT_ENV_KEYS + PRINCIPAL_ENV_KEYS).freeze
       FLAT_TRUSTED_ENV = {}.freeze
       PROCESS_EXECUTION_MUTEX = Mutex.new
 
@@ -59,20 +62,25 @@ module RootCause
       private
 
       # ENV and $stdout are process-global, so action execution must be serialized
-      # while trusted host context is installed to prevent cross-run tenant bleed.
+      # while trusted host context is installed to prevent cross-run context bleed.
       def with_trusted_environment(values)
-        unless (values.keys - TRUSTED_ENV_KEYS).empty? && values.values.all?(String)
-          raise ArgumentError, "trusted_env may contain only RC_TENANT_* string fields"
+        unless values.keys.all? { |key| trusted_env_key?(key) } && values.values.all? { |value| value.is_a?(String) && !value.include?("\0") }
+          raise ArgumentError, "trusted_env may contain only trusted NUL-free string fields"
         end
 
-        previous = TRUSTED_ENV_KEYS.to_h { |key| [key, [ENV.key?(key), ENV[key]]] }
-        TRUSTED_ENV_KEYS.each { |key| ENV.delete(key) }
+        managed_keys = (TRUSTED_ENV_KEYS + values.keys + ENV.keys.grep(/\ARC_PRINCIPAL_/)).uniq
+        previous = managed_keys.to_h { |key| [key, [ENV.key?(key), ENV[key]]] }
+        managed_keys.each { |key| ENV.delete(key) }
         values.each { |key, value| ENV[key] = value }
         yield
       ensure
         previous&.each do |key, (present, value)|
           present ? ENV[key] = value : ENV.delete(key)
         end
+      end
+
+      def trusted_env_key?(key)
+        TRUSTED_ENV_KEYS.include?(key) || PRINCIPAL_CLAIM_ENV_PATTERN.match?(key)
       end
 
       def compile(script, digest)

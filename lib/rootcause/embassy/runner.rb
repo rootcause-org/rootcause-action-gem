@@ -15,6 +15,7 @@ module RootCause
       Reply = Struct.new(:status, :body, :signature, keyword_init: true)
 
       TRUSTED_TENANT_FIELDS = %w[tenant_id tenant_slug tenant_scope_value].freeze
+      PRINCIPAL_CLAIM_NAME_PATTERN = /\A[a-z][a-z0-9_]*\z/
       REQUIRED_FIELDS = %w[action_id script_digest nonce issued_at].freeze
       TENANT_ID_PATTERN = /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
       TENANT_SLUG_PATTERN = /\A[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?\z/
@@ -130,6 +131,7 @@ module RootCause
         end
 
         validate_tenant_context!(data)
+        validate_principal_context!(data)
         data
       rescue JSON::ParserError
         raise InvalidRequest, "body is not valid JSON"
@@ -175,7 +177,7 @@ module RootCause
           script: script,
           params: params,
           digest: invocation["script_digest"],
-          trusted_env: trusted_tenant_env(invocation)
+          trusted_env: trusted_context_env(invocation)
         )
       end
 
@@ -223,6 +225,58 @@ module RootCause
           "RC_TENANT_SLUG" => invocation.fetch("tenant_slug", ""),
           "RC_TENANT_SCOPE_VALUE" => invocation.fetch("tenant_scope_value", "")
         }.reject { |_key, value| value.empty? }.freeze
+      end
+
+      def validate_principal_context!(invocation)
+        return unless invocation.key?("principal")
+
+        principal = invocation["principal"]
+        raise InvalidRequest, "principal must be an object" unless principal.is_a?(Hash)
+
+        %w[kind external_id].each do |field|
+          value = principal[field]
+          unless value.is_a?(String) && !value.empty?
+            raise InvalidRequest, "principal #{field} must be a non-empty string"
+          end
+          raise InvalidRequest, "principal fields must not contain NUL bytes" if value.include?("\0")
+        end
+
+        claims = principal["claims"]
+        raise InvalidRequest, "principal claims must be an object" unless claims.is_a?(Hash)
+
+        claims.each do |name, value|
+          unless name.is_a?(String) && PRINCIPAL_CLAIM_NAME_PATTERN.match?(name)
+            raise InvalidRequest, "principal claim names are invalid"
+          end
+          validate_principal_claim!(value)
+        end
+      end
+
+      def validate_principal_claim!(value)
+        scalar = value.is_a?(String) || value.is_a?(Integer)
+        array = value.is_a?(Array) && (value.all?(String) || value.all?(Integer))
+        unless scalar || array
+          raise InvalidRequest, "principal claim values must be strings, integers, or homogeneous arrays"
+        end
+
+        strings = value.is_a?(Array) ? value.grep(String) : [value].grep(String)
+        raise InvalidRequest, "principal fields must not contain NUL bytes" if strings.any? { |item| item.include?("\0") }
+      end
+
+      def trusted_context_env(invocation)
+        trusted_tenant_env(invocation).merge(trusted_principal_env(invocation)).freeze
+      end
+
+      def trusted_principal_env(invocation)
+        principal = invocation["principal"]
+        return {} unless principal
+
+        claims = principal.fetch("claims")
+        {
+          "RC_PRINCIPAL_KIND" => principal.fetch("kind"),
+          "RC_PRINCIPAL_EXTERNAL_ID" => principal.fetch("external_id")
+        }.merge(claims.transform_keys { |name| "RC_PRINCIPAL_CLAIM_#{name.upcase}" }
+          .transform_values { |value| value.is_a?(Array) ? JSON.generate(value) : value.to_s })
       end
 
       def clock_ms = Process.clock_gettime(Process::CLOCK_MONOTONIC, :float_millisecond)

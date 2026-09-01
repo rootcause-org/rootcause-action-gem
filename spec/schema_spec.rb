@@ -52,9 +52,14 @@ RSpec.describe RootCause::Embassy::Schema do
     expect { validate({"evil" => 1}, {"x" => {"type" => "integer"}}) }.to raise_error(SchemaError, /unknown/)
   end
 
-  it "reserves tenant selectors for signed host context" do
-    %w[tenant_id tenant_slug tenant_scope_value RC_TENANT_ID RC_TENANT_SLUG RC_TENANT_SCOPE_VALUE].each do |name|
+  it "reserves tenant and principal selectors for signed host context" do
+    %w[
+      tenant_id tenant_slug tenant_scope_value RC_TENANT_ID RC_TENANT_SLUG RC_TENANT_SCOPE_VALUE
+      RC_TENANT_ANY principal_kind principal_external_id RC_PRINCIPAL_KIND RC_PRINCIPAL_CLAIM_USER_ID
+    ].each do |name|
       expect { validate({name => "attacker"}, {name => {"type" => "string"}}) }
+        .to raise_error(SchemaError, /host-owned/)
+      expect { validate({}, {name => {"type" => "string", "required" => false}}) }
         .to raise_error(SchemaError, /host-owned/)
     end
   end
