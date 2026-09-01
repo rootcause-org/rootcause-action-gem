@@ -21,6 +21,10 @@ module RootCause
       TENANT_SLUG_PATTERN = /\A[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?\z/
       NIL_UUID = "00000000-0000-0000-0000-000000000000"
 
+      # Exposed so a thin transport shell (RackApp) can answer plane-disabled before
+      # it routes, without reaching into internals.
+      attr_reader :config
+
       def initialize(config, resolver: nil, executor: nil, nonce_store: nil)
         @config = config
         @resolver = resolver || Resolver.new(config)

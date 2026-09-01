@@ -119,14 +119,14 @@ RSpec.describe RootCause::Embassy::Config do
     it "refuses the action reverse-channel secret reused as the chat secret" do
       cfg = base
       cfg.chat_secret = "s"
-      cfg.chat_project = "kampadmin-support"
+      cfg.chat_project = "acme-support"
       expect { cfg.validate! }.to raise_error(ArgumentError, /ROOTCAUSE_CHAT_SECRET/)
     end
 
     it "rejects a chat_base_url that is not an absolute http(s) URL" do
       cfg = base
       cfg.chat_secret = "webhook-secret"
-      cfg.chat_project = "kampadmin-support"
+      cfg.chat_project = "acme-support"
       cfg.chat_base_url = "chat.rootcause.test"
       expect { cfg.validate! }.to raise_error(ArgumentError, /chat_base_url/)
     end

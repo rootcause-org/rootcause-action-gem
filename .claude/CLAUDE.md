@@ -12,16 +12,16 @@ async-analysis results** — all using the customer's own env, code, and tooling
 ever travels on the wire.
 
 **The authoritative design for this gem is [SPEC.md](SPEC.md). Read it before changing behavior.**
-The whole-plane design lives in
-[`rootcause/docs/action-plane-spec.md`](https://github.com/rootcause-org/rootcause/blob/main/docs/action-plane-spec.md)
-— read that first for the host side (registry, signer, confirm/execute pages, audit).
+The cross-language wire contract every Embassy implements is
+[`rootcause-embassy/CONTRACT.md`](https://github.com/rootcause-org/rootcause-embassy/blob/main/CONTRACT.md) (with `decisions.md` and
+`docs/integrator/`) — read it before changing anything that crosses the wire, and keep the Go port
+(`rootcause-embassy-go`) at DX parity.
 
 ## Stage
 
-Scaffold + spec, **no implementation yet, no users**. Refactor freely — no backward-compat, no shims,
-delete dead code, rename freely. First customer: **Momentum Tools** (a *self-owned* project, so full
-delegation is fine; the customer-held approval allowlist is a launch blocker only for the first
-non-self-owned customer).
+Implemented and in use by a small pilot fleet. Move fast, but this gem is **public and installed**:
+additive changes only on the config surface and the wire, and bump the version for anything an
+integrator can observe.
 
 ## What we do / what we don't
 
@@ -39,7 +39,8 @@ execute inline with a hard timeout, params bound **as data** → return signed s
 - **No registry / approval logic** — that is the host's. The gem only verifies and runs.
 - **No async / job queue / callbacks of its own** — inline and synchronous.
 - **No sending email** — the human-reviewed draft is rootcause's concern.
-- **No non-Ruby runners, no large-output/download URLs, no dry-run** in v1 (the contract is ready).
+- **No non-Ruby runners, no large-output/download URLs.** (`dry_run` IS implemented — it runs the
+  full verify→replay→schema→resolve pipeline and skips only execution.)
 
 ## Taxonomy (shared verbatim with rootcause / ReplyPen)
 
@@ -64,7 +65,8 @@ One word per concept. Use the **bold** term in code, comments, docs, commits, te
 
 ## Conventions & key decisions
 
-- **Refactor freely; no backward-compat** while pre-implementation. No shims/flags.
+- **No silent breaks.** The gem is installed; config keys and the initializer shape stay
+  backward-compatible, and a customer-observable change bumps the minor version.
 - **Fail closed everywhere:** bad signature, stale/duplicate nonce, schema violation, digest mismatch,
   fetch non-2xx → refuse, return a structured error, log it.
 - **Tenant scope is host-owned.** Every signed invocation carries `tenant_id`, `tenant_slug`, and

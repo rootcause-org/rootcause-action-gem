@@ -5,7 +5,7 @@ RSpec.describe RootCause::Embassy::Chat do
 
   def mint(**overrides)
     described_class.token(
-      external_id: "admin-uuid-1", kind: "kampadmin_admin", origin: Wire::CHAT_ORIGIN, config: cfg, **overrides
+      external_id: "admin-uuid-1", kind: "acme_admin", origin: Wire::CHAT_ORIGIN, config: cfg, **overrides
     )
   end
 
@@ -26,7 +26,7 @@ RSpec.describe RootCause::Embassy::Chat do
         "exp" => now.to_i + 7200
       )
       expect(claims["principal"]).to eq(
-        "kind" => "kampadmin_admin",
+        "kind" => "acme_admin",
         "external_id" => "admin-uuid-1",
         "asserted_by" => Wire::CHAT_PROJECT,
         "assurance" => "customer_backend_jwt"
@@ -86,22 +86,22 @@ RSpec.describe RootCause::Embassy::Chat do
     end
 
     it "allows overriding the principal's provenance" do
-      _, claims = Wire.decode_jwt(mint(asserted_by: "kampadmin", assurance: "sso"))
-      expect(claims["principal"]).to include("asserted_by" => "kampadmin", "assurance" => "sso")
+      _, claims = Wire.decode_jwt(mint(asserted_by: "acme", assurance: "sso"))
+      expect(claims["principal"]).to include("asserted_by" => "acme", "assurance" => "sso")
     end
 
     it "canonicalizes the origin the host compares byte-for-byte" do
-      _, claims = Wire.decode_jwt(mint(origin: "https://ADMIN.kampadmin.be/"))
-      expect(claims["origin"]).to eq("https://admin.kampadmin.be")
+      _, claims = Wire.decode_jwt(mint(origin: "https://ADMIN.acme.example/"))
+      expect(claims["origin"]).to eq("https://admin.acme.example")
 
       _, with_port = Wire.decode_jwt(mint(origin: "http://localhost:3000"))
       expect(with_port["origin"]).to eq("http://localhost:3000")
     end
 
     it "refuses an origin that is not a bare scheme://host[:port]" do
-      expect { mint(origin: "https://admin.kampadmin.be/t/heyo/admin") }.to raise_error(ArgumentError, /origin/)
-      expect { mint(origin: "admin.kampadmin.be") }.to raise_error(ArgumentError, /origin/)
-      expect { mint(origin: "https://user:pass@admin.kampadmin.be") }.to raise_error(ArgumentError, /origin/)
+      expect { mint(origin: "https://admin.acme.example/t/heyo/admin") }.to raise_error(ArgumentError, /origin/)
+      expect { mint(origin: "admin.acme.example") }.to raise_error(ArgumentError, /origin/)
+      expect { mint(origin: "https://user:pass@admin.acme.example") }.to raise_error(ArgumentError, /origin/)
     end
 
     it "refuses blank identity, a blank origin, and a non-positive ttl" do
@@ -123,7 +123,7 @@ RSpec.describe RootCause::Embassy::Chat do
         c.chat_project = Wire::CHAT_PROJECT
       end
       token = RootCause::Embassy.chat_token(
-        external_id: "admin-uuid-1", kind: "kampadmin_admin", origin: Wire::CHAT_ORIGIN
+        external_id: "admin-uuid-1", kind: "acme_admin", origin: Wire::CHAT_ORIGIN
       )
       expect(Wire.decode_jwt(token).last["iss"]).to eq(Wire::CHAT_PROJECT)
     end
@@ -132,7 +132,7 @@ RSpec.describe RootCause::Embassy::Chat do
   describe ".widget_tag_html" do
     def tag(**overrides)
       described_class.widget_tag_html(
-        external_id: "admin-uuid-1", kind: "kampadmin_admin", origin: Wire::CHAT_ORIGIN, config: cfg, **overrides
+        external_id: "admin-uuid-1", kind: "acme_admin", origin: Wire::CHAT_ORIGIN, config: cfg, **overrides
       )
     end
 
@@ -211,7 +211,7 @@ RSpec.describe RootCause::Embassy::Chat do
 
     it "returns the escaped core snippet, marked safe when ActiveSupport is present" do
       html = view.chat_widget_tag(
-        external_id: "admin-uuid-1", kind: "kampadmin_admin", origin: Wire::CHAT_ORIGIN, config: Wire.chat_config
+        external_id: "admin-uuid-1", kind: "acme_admin", origin: Wire::CHAT_ORIGIN, config: Wire.chat_config
       )
       expect(html).to include("data-rc-token=")
       expect(html).to eq(html.to_s)

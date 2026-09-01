@@ -14,9 +14,9 @@ It does four things:
 
 No executable code travels on the wire. Runtime dependencies: Ruby standard library only.
 
-> The authoritative design is [SPEC.md](SPEC.md). The whole-plane design (host side: registry,
-> signer, confirm/execute pages, audit) lives in
-> [`rootcause/docs/action-plane-spec.md`](https://github.com/rootcause-org/rootcause/blob/main/docs/action-plane-spec.md).
+> The authoritative design of this gem is [SPEC.md](SPEC.md); the cross-language wire contract every
+> Embassy implements is [`rootcause-embassy/CONTRACT.md`](https://github.com/rootcause-org/rootcause-embassy/blob/main/CONTRACT.md), and the
+> integrator guides live in [`docs/integrator/`](https://github.com/rootcause-org/rootcause-embassy/tree/main/docs/integrator).
 
 ## Install
 
@@ -134,6 +134,13 @@ mount RootCause::Embassy::RackApp.new => RootCause::Embassy.config.mount_at
 
 **Recommended (documented, not enforced in v1):** restrict the route to rootcause's egress IP at the
 edge, and run under a least-privileged DB role where feasible.
+
+Mounting the action (and result) routes in a **chat-only** deployment is safe: with no action secret
+there is nothing to sign with, so every request — including the `/health` child — gets an unsigned
+`503 ACTION_PLANE_DISABLED` carrying its own `code` / `hint` / `docs`. Chat can never switch the
+action plane on: the plane is enabled only by configuring `secret` (or `secrets`) **and** `fetch_url`.
+`start_analysis` / `capture_sent_message` refuse the same way, with
+`ANALYSIS_TRIGGER_URL_REQUIRED` / `SENT_MESSAGE_URL_REQUIRED` / `ACTION_PLANE_DISABLED`.
 
 ## What it does, in order (fail-closed at every step)
 

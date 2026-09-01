@@ -14,7 +14,7 @@ results**. No executable code ever travels in the invocation; the gem only runs 
 > **This repo is the gem only.** The host (registry, signer, confirm/execute pages, audit) lives in
 > [`rootcause`](https://github.com/rootcause-org/rootcause). The authoritative design for
 > the whole plane is
-> [`docs/action-plane-spec.md`](https://github.com/rootcause-org/rootcause/blob/main/docs/action-plane-spec.md)
+> [`rootcause-embassy/CONTRACT.md`](https://github.com/rootcause-org/rootcause-embassy/blob/main/CONTRACT.md)
 > in that repo — **read it first**; this SPEC narrows it to the runner's responsibilities and the
 > wire contract the gem must honor.
 

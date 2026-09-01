@@ -80,9 +80,9 @@ module Wire
   # --- embedded chat ---
   # The chat key is the project's webhook_secret — deliberately NOT the reverse-channel SECRET above.
   CHAT_SECRET = "test-project-webhook-secret"
-  CHAT_PROJECT = "kampadmin-support"
+  CHAT_PROJECT = "acme-support"
   CHAT_BASE_URL = "https://chat.rootcause.test"
-  CHAT_ORIGIN = "https://admin.kampadmin.be"
+  CHAT_ORIGIN = "https://admin.acme.example"
 
   # Verify + parse a compact JWS exactly as the rootcause host does: HMAC over the EXACT transmitted
   # `header.payload` segments, then JSON. Raises when the signature does not verify.

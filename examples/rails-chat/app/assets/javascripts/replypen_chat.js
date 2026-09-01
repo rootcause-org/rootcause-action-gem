@@ -13,7 +13,7 @@
       headers: { "Accept": "application/json", "X-CSRF-Token": csrf.content }
     });
     var payload = await response.json();
-    if (!response.ok || !payload.token) throw new Error("Chat token request failed.");
+    if (!response.ok || !payload.token || !payload.loaderUrl) throw new Error("Chat token request failed.");
     return payload;
   }
 
@@ -25,7 +25,7 @@
     var script = document.createElement("script");
     script.id = "replypen-loader";
     script.async = true;
-    script.src = chat.baseUrl.replace(/\/$/, "") + "/chat/widget/v1/loader.js?v=2";
+    script.src = chat.loaderUrl;
     script.dataset.rcProject = chat.project;
     script.dataset.rcToken = chat.token;
     script.dataset.rcMode = "page";

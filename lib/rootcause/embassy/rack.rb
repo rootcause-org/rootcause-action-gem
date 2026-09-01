@@ -19,6 +19,10 @@ module RootCause
       end
 
       def call(env)
+        # Plane check first (Go-port parity): a chat-only deployment that mounts the
+        # action routes gets a diagnostic 503 on the health child too, instead of a
+        # bare 404 that reads as "wrong path".
+        return plane_disabled unless runner.config.action_plane_enabled?
         return health(env) if env["PATH_INFO"] == "/health"
         return method_not_allowed unless env["REQUEST_METHOD"] == "POST"
 
@@ -55,6 +59,15 @@ module RootCause
         respond(reply.status, reply.body, reply.signature)
       end
 
+      # UNSIGNED by construction: with no action secret configured there is no key
+      # to sign with. Safe — the host never trusts an unverified body.
+      def plane_disabled
+        error = ActionPlaneDisabled.new
+        [error.status, {"content-type" => JSON_TYPE}, [JSON.generate(ok: false, error: error.wire_payload)]]
+      end
+
+      # Deliberately UNSIGNED and outside the signed vocabulary: the liveness floor
+      # an operator probes with no side effects.
       def method_not_allowed
         error = MethodNotAllowed.new("POST required")
         [error.status, {"content-type" => JSON_TYPE, "allow" => "POST"}, [JSON.generate(ok: false, error: error.wire_payload)]]

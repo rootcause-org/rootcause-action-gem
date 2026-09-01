@@ -15,11 +15,18 @@ class ReplypenChatController < ApplicationController
     render json: {
       token: RootCause::Embassy.chat_token(**chat_identity(origin: origin)),
       project: RootCause::Embassy.config.chat_project,
-      baseUrl: RootCause::Embassy.config.chat_base_url
+      # Server-built so the loader contract version stays owned by the gem — a
+      # hardcoded `?v=` in JavaScript would silently drift on a gem upgrade.
+      loaderUrl: loader_url
     }
   end
 
   private
+
+  def loader_url
+    chat = RootCause::Embassy::Chat
+    "#{RootCause::Embassy.config.chat_base_url}#{chat::LOADER_PATH}?v=#{chat::LOADER_CONTRACT}"
+  end
 
   def chat_identity(origin:)
     {

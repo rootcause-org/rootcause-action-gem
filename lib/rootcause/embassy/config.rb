@@ -115,7 +115,7 @@ module RootCause
       # leaves all three chat attributes nil.
       attr_accessor :chat_secret
 
-      # The rootcause project name the token is issued for, e.g. "kampadmin-support"
+      # The rootcause project name the token is issued for, e.g. "acme-support"
       # (ENV ROOTCAUSE_CHAT_PROJECT). Public — it ships in the widget tag.
       attr_accessor :chat_project
 

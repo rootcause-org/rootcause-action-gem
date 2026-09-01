@@ -11,7 +11,7 @@ module RootCause
     #   include RootCause::Embassy::ChatViewHelper
     #
     #   <%= chat_widget_tag(external_id: current_admin_user.id,
-    #                       kind: "kampadmin_admin",
+    #                       kind: "acme_admin",
     #                       tenant: ActsAsTenant.current_tenant.slug,
     #                       origin: request.base_url,
     #                       mode: :page, target: "#rc-chat") %>

@@ -44,11 +44,15 @@ module RootCause
       #   typed data-plane claims. Omit entirely when there is no authenticated user.
       # @return [Analysis]
       # @raise [TriggerError] non-2xx, malformed response, or transport failure
-      # @raise [ArgumentError] missing trigger_url, an over-cap/malformed attachment,
-      #   or a principal without both kind and external_id
+      # @raise [Error] chat-only/half-wired setup: ANALYSIS_TRIGGER_URL_REQUIRED or
+      #   ACTION_PLANE_DISABLED (both carry code/hint/docs; Error < ArgumentError)
+      # @raise [ArgumentError] an over-cap/malformed attachment, or a principal
+      #   without both kind and external_id
       def start_analysis(subject:, body:, attachments: [], metadata: {}, session_id: nil, tenant: nil, principal: nil, project_id: nil)
         url = @config.trigger_url
-        raise ArgumentError, "RootCause::Embassy: trigger_url is not configured" if blank?(url)
+        if blank?(url)
+          raise Error.public("ANALYSIS_TRIGGER_URL_REQUIRED", "Set ROOTCAUSE_TRIGGER_URL before starting an analysis.")
+        end
 
         metadata ||= {}
         payload = {
@@ -91,11 +95,16 @@ module RootCause
       #   thread id. Keys are logged, values never.
       # @return [SentMessage] frozen, `ok: true` (with the host's id when echoed)
       # @raise [SentMessageError] non-2xx, malformed response, or transport failure
-      # @raise [ArgumentError] missing sent_message_url/session_id, no content, or malformed answers
+      # @raise [Error] SENT_MESSAGE_URL_REQUIRED, SESSION_ID_REQUIRED,
+      #   SENT_MESSAGE_CONTENT_REQUIRED, SENT_MESSAGE_INVALID, or ACTION_PLANE_DISABLED
       def capture_sent_message(session_id:, sent_body: nil, proposed_body: nil, sender: nil, metadata: {}, answers: [], project_id: nil)
         url = @config.sent_message_url
-        raise ArgumentError, "RootCause::Embassy: sent_message_url is not configured" if blank?(url)
-        raise ArgumentError, "RootCause::Embassy: session_id is required" if blank?(session_id)
+        if blank?(url)
+          raise Error.public("SENT_MESSAGE_URL_REQUIRED", "Set ROOTCAUSE_SENT_MESSAGE_URL before capturing a sent message.")
+        end
+        if blank?(session_id)
+          raise Error.public("SESSION_ID_REQUIRED", "Set session_id to the ReplyPen session being continued.")
+        end
 
         metadata ||= {}
         answers = normalize_answers(answers)

@@ -4,7 +4,7 @@
 capability: the customer's app **triggers an analysis** on the rootcause host and later **receives the
 result** asynchronously into a Ruby handler. The host side (ingest endpoint, run lifecycle, result
 delivery) lives in
-[`rootcause/docs/async-analysis-host-spec.md`](https://github.com/rootcause-org/rootcause/blob/main/docs/async-analysis-host-spec.md)
+[`rootcause-embassy/CONTRACT.md`](https://github.com/rootcause-org/rootcause-embassy/blob/main/CONTRACT.md)
 — read it for everything off-gem.
 
 **Session continuation (host-managed).** rootcause keeps the conversation history server-side, keyed by
@@ -215,7 +215,7 @@ body), constant-time compare, sign-then-send / verify-on-raw — identical to SP
   "session_id":  "uuid",          // OPTIONAL — present only on a follow-up; omitted on turn 1
   "tenant":      "acme",          // OPTIONAL — tenant slug on tenant-enabled projects
   "principal":   {                // OPTIONAL — who the trigger is on behalf of
-    "kind": "probackup_user", "external_id": "u-42",
+    "kind": "acme_user", "external_id": "u-42",
     "asserted_by": "myapp", "assurance": "customer_backend_session",
     "tenant_hint": "acme", "source_metadata": { "conversation_id": "…" }
   },

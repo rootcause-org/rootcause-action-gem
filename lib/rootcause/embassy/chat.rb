@@ -44,7 +44,7 @@ module RootCause
 
       # Mint an embed token. `external_id` is the opaque, stable user id rootcause anchors a
       # conversation to (never a name/email); `kind` names the identity namespace it lives in
-      # (e.g. "kampadmin_admin"). `tenant` is the rootcause tenant SLUG — required by the host on a
+      # (e.g. "acme_admin"). `tenant` is the rootcause tenant SLUG — required by the host on a
       # tenant-enabled project, and it must come from the server-side authorized tenant context, not
       # from client input: everything below is inside the signature, so a swapped tenant is a broken
       # token.

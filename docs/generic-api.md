@@ -9,7 +9,7 @@ the day it ships, with no gem release. What the gem promises is narrow and stabl
 result struct that never raises for an HTTP outcome.
 
 **What endpoints exist is the host's contract, not the gem's** — see rootcause's API spec / endpoint
-manifest (`rootcause/docs/`, or `rc api --help`) for paths, bodies and status codes. Ask the host
+manifest (`rc api --help`, or the host's published OpenAPI) for paths, bodies and status codes. Ask the host
 repo, not this README.
 
 Implementation: [`lib/rootcause/embassy/api.rb`](../lib/rootcause/embassy/api.rb) (calls) and
@@ -54,16 +54,16 @@ POST {api_base_url}/oauth/token          (form-encoded)
 
 ## Several projects (refresh tokens are project-pinned)
 
-A rootcause credential is bound to **one project**, so an app that spans several — e.g. KampAdmin
-pushing tenant settings to `kampadmin` while editing brains on `kampadmin-support` and
-`kampadmin-staff` — holds one credential per project and builds a caller for each:
+A rootcause credential is bound to **one project**, so an app that spans several — e.g. Acme
+pushing tenant settings to `acme` while editing brains on `acme-support` and
+`acme-staff` — holds one credential per project and builds a caller for each:
 
 ```ruby
 support = RootCause::Embassy.api_for(
   api_base_url: ENV.fetch("ROOTCAUSE_API_BASE_URL"),
   api_key:      ENV.fetch("ROOTCAUSE_SUPPORT_API_KEY"), # a DIFFERENT rcor_ token
 )
-support.post("/api/v1/brains/kampadmin-support/edit", body: {...})
+support.post("/api/v1/brains/acme-support/edit", body: {...})
 ```
 
 `api_for` returns an **independent** `Api` — the configured `Embassy.api` singleton keeps using

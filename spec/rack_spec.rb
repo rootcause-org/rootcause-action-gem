@@ -43,11 +43,23 @@ RSpec.describe RootCause::Embassy::RackApp do
     chat_only.logger = nil
     chat_only.validate!
 
-    status, headers, body = described_class.new(runner: RootCause::Embassy::Runner.new(chat_only))
-      .call(env_for(method: "POST", body: "{}"))
+    chat_only_app = described_class.new(runner: RootCause::Embassy::Runner.new(chat_only))
+
+    status, headers, body = chat_only_app.call(env_for(method: "POST", body: "{}"))
     expect(status).to eq(503)
     expect(headers).not_to have_key(RootCause::Embassy::Signature::HEADER)
-    expect(JSON.parse(body.join).dig("error", "code")).to eq("ACTION_PLANE_DISABLED")
+    error = JSON.parse(body.join)["error"]
+    expect(error["code"]).to eq("ACTION_PLANE_DISABLED")
+    expect(error["hint"]).to include("ROOTCAUSE_ACTION_SECRET")
+    expect(error["docs"]).to end_with("errors.md#action_plane_disabled")
+
+    # The health child answers the same diagnostic 503, never a bare 404 that reads
+    # as "wrong path" — and never a signed reply, since there is no key to sign with.
+    health_status, _, health_body = chat_only_app.call(
+      env_for(method: "GET").merge("PATH_INFO" => "/health", "QUERY_STRING" => "")
+    )
+    expect(health_status).to eq(503)
+    expect(JSON.parse(health_body.join).dig("error", "code")).to eq("ACTION_PLANE_DISABLED")
   end
 
   it "passes a bad signature through to a signed 401" do

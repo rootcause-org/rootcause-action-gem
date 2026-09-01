@@ -70,13 +70,13 @@ RSpec.describe RootCause::Embassy::Client do
       Wire.stub_trigger
       client.start_analysis(
         subject: "s", body: "b",
-        principal: {kind: "probackup_user", external_id: "u-42", asserted_by: "intercom", tenant_hint: nil}
+        principal: {kind: "acme_user", external_id: "u-42", asserted_by: "intercom", tenant_hint: nil}
       )
 
       expect(
         a_request(:post, Wire::TRIGGER_URL).with { |req|
           JSON.parse(req.body)["principal"] == {
-            "kind" => "probackup_user", "external_id" => "u-42", "asserted_by" => "intercom"
+            "kind" => "acme_user", "external_id" => "u-42", "asserted_by" => "intercom"
           }
         }
       ).to have_been_made
@@ -94,7 +94,7 @@ RSpec.describe RootCause::Embassy::Client do
     it "raises before sending when the identity core is incomplete" do
       Wire.stub_trigger
       expect {
-        client.start_analysis(subject: "s", body: "b", principal: {kind: "probackup_user"})
+        client.start_analysis(subject: "s", body: "b", principal: {kind: "acme_user"})
       }.to raise_error(ArgumentError, /external_id/)
       expect(a_request(:post, Wire::TRIGGER_URL)).not_to have_been_made
     end
@@ -103,7 +103,7 @@ RSpec.describe RootCause::Embassy::Client do
       Wire.stub_trigger
       client.start_analysis(
         subject: "s", body: "b",
-        principal: {"kind" => "probackup_user", "external_id" => "u-1", "role" => "admin"}
+        principal: {"kind" => "acme_user", "external_id" => "u-1", "role" => "admin"}
       )
 
       expect(
@@ -209,11 +209,16 @@ RSpec.describe RootCause::Embassy::Client do
     }.to raise_error(RootCause::Embassy::TriggerError, /trigger failed/)
   end
 
-  it "raises ArgumentError when trigger_url is unconfigured" do
+  it "refuses with an additive typed code when trigger_url is unconfigured (chat-only boot)" do
     config.trigger_url = nil
     expect {
       client.start_analysis(subject: "s", body: "b")
-    }.to raise_error(ArgumentError, /trigger_url is not configured/)
+    }.to raise_error(RootCause::Embassy::Error) { |error|
+      expect(error).to be_a(ArgumentError) # unchanged for callers rescuing the old shape
+      expect(error.code).to eq("ANALYSIS_TRIGGER_URL_REQUIRED")
+      expect(error.hint).to include("ROOTCAUSE_TRIGGER_URL")
+      expect(error.docs).to end_with("errors.md#analysis_trigger_url_required")
+    }
   end
 
   describe "logging" do
@@ -322,12 +327,15 @@ RSpec.describe RootCause::Embassy::Client do
       expect(result.id).to be_nil
     end
 
-    it "raises ArgumentError BEFORE any HTTP when sent_message_url is unconfigured" do
+    it "refuses with an additive typed code BEFORE any HTTP when sent_message_url is unconfigured" do
       config.sent_message_url = nil
       stub = Wire.stub_sent_message
       expect {
         client.capture_sent_message(sent_body: "reply", session_id: "sess-1")
-      }.to raise_error(ArgumentError, /sent_message_url is not configured/)
+      }.to raise_error(RootCause::Embassy::Error) { |error|
+        expect(error.code).to eq("SENT_MESSAGE_URL_REQUIRED")
+        expect(error.docs).to end_with("errors.md#sent_message_url_required")
+      }
       expect(stub).not_to have_been_requested
     end
 
@@ -343,7 +351,7 @@ RSpec.describe RootCause::Embassy::Client do
       stub = Wire.stub_sent_message
       expect {
         client.capture_sent_message(sent_body: "reply", session_id: "")
-      }.to raise_error(ArgumentError, /session_id is required/)
+      }.to raise_error(RootCause::Embassy::Error) { |error| expect(error.code).to eq("SESSION_ID_REQUIRED") }
       expect(stub).not_to have_been_requested
     end
 

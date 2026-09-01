@@ -1,6 +1,6 @@
 # Sent-Message Capture Spec (gem side)
 
-**Status:** ready to build · **Repo:** `rootcause-embassy` (the gem) · **Consumer spec:** `kampadmin/docs/specs/rootcause-sent-message-capture.md` · **Host spec:** `rootcause/docs/specs/sent-message-capture.md` (§ "Gem-facing route"). Build in lockstep — one shared wire contract (§3).
+**Status:** ready to build · **Repo:** `rootcause-embassy` (the gem) · **Wire contract:** [`rootcause-embassy/CONTRACT.md`](https://github.com/rootcause-org/rootcause-embassy/blob/main/CONTRACT.md). Host and consumer build in lockstep against that one contract (§3).
 
 ## 1. Intent
 
@@ -11,7 +11,7 @@ proposed-vs-sent delta. No analysis here — just transport.
 
 This is the gem-channel analogue of ReplyPen's `sent_capture` lane (ReplyPen has its own direct
 webhook path; the gem path is for apps that integrate via `RootCause::Embassy`, e.g.
-kampadmin). Both feed the **same** `sent_messages` sink on the host.
+acme). Both feed the **same** `sent_messages` sink on the host.
 
 ## 2. New public method — mirror `start_analysis`
 
@@ -78,7 +78,7 @@ host already enforces for the analysis trigger). Body:
 A new route on rootcause, sibling of the analysis trigger, verified with the project's
 **reverse secret** (`projects.action_reverse_secret`) + replay guard, persisting into the shared
 `sent_messages` table (the table the ReplyPen path already defines). Detailed in
-`rootcause/docs/specs/sent-message-capture.md` → "Gem-facing route". The gem only needs the
+the hub CONTRACT's sent-message route. The gem only needs the
 URL configured; it does not care about persistence.
 
 ## 5. Tests (RSpec, reuse `spec/support/wire.rb`)
@@ -93,4 +93,4 @@ URL configured; it does not care about persistence.
 ## 6. Out of scope
 
 No analysis, no delta scoring, no attachments, no polling/callback, no result handler. Pure
-outbound POST. Significant-vs-trivial gating is the **caller's** job (see kampadmin spec).
+outbound POST. Significant-vs-trivial gating is the **caller's** job (see acme spec).
