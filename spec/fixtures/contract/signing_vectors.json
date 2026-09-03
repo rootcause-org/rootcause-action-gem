@@ -155,9 +155,9 @@
       "file": "analysis/result_callback.json",
       "direction": "host->embassy",
       "secret": "contract-reverse-secret",
-      "body_bytes": 1347,
-      "body_sha256": "391c3979353c367002de0ffb61c300195e0bde0577d044f4a967107b9031449e",
-      "signature": "sha256=a4296d57fd15bf2f812f3b18ba01f18b2c28040a74504f215c6c72c63b0b4421",
+      "body_bytes": 1409,
+      "body_sha256": "a608288e0985986b8d95e558e42bc887c2de7f5d9543f86857fefa470a745e9b",
+      "signature": "sha256=9d604817007b60e17dc5ff346b144b9b11596b94eaef0bc4596aba3872c67a2e",
       "note": "nonce == analysis_id == run_id"
     },
     {

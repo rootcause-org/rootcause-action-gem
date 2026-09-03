@@ -264,7 +264,10 @@ summary note plus widget notes; the gem surfaces only the summary, whose body ca
 a markdown link). HTML is used only as a fallback when markdown is absent. `draft` / `note` /
 `attachments` / `questions` are informational (safe to auto-burn); **`actions[]`** are vetted
 side-effects rootcause *proposes* — render them for a human to click, and they ride back through the
-**invocation route**. The gem never auto-runs them.
+**invocation route**. The gem never auto-runs them. An action may carry an optional
+**`resource_url`**: an absolute link to the record it would modify in *your own* admin UI. It is
+render-only — a secondary "view record" link beside the confirm button, never the confirm target
+(that is `url`).
 
 Two more lists complete the surface:
 

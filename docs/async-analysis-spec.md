@@ -270,9 +270,12 @@ The split that keeps the SPEC §1 invariant intact:
 
 - **`draft` / `note` / `attachments` / `questions`** — informational analysis output → safe to
   **auto-burn** into the customer's records. No gate.
-- **`actions[]`** — vetted side-effects rootcause *proposes*. Each is a `{ label, description, url }`
-  pointing at rootcause's single-use, expiring confirm page. The customer **renders** them (a human
-  clicks) → rootcause executes via the gem's **existing invocation route**. The gem never auto-runs them.
+- **`actions[]`** — vetted side-effects rootcause *proposes*. Each is a
+  `{ label, description, url, resource_url? }`; `url` points at rootcause's single-use, expiring
+  confirm page. The customer **renders** them (a human clicks) → rootcause executes via the gem's
+  **existing invocation route**. The gem never auto-runs them. The optional `resource_url` is an
+  absolute link to the record in the customer's *own* admin UI — a render-only inspect link beside the
+  confirm button, never a confirm target.
 - **`executed_actions[]`** — the opposite: writes the run **already performed** mid-loop under the
   project's host-side autonomy gate. Nothing is pending, so render them as **outcomes/history —
   never as confirm buttons**. (Restating the invariants: no embassy auto-executes an action, and no

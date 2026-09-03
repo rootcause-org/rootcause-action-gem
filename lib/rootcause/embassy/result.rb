@@ -14,7 +14,14 @@ module RootCause
     # through the gem's existing invocation route. The gem never auto-runs them, so
     # no "autonomous action" feature is needed. Each action is a pass-through hash
     # with { id (action_run uuid), slug (registry action id), label, description,
-    # url (single-use token), color }; read fields via symbol keys.
+    # url (single-use token), resource_url, color }; read fields via symbol keys.
+    #
+    # `resource_url` is OPTIONAL and RENDER-ONLY: an absolute http(s) link to the
+    # record the action would modify, in the customer's OWN admin UI, so a reviewer
+    # can inspect before confirming. Render it as a secondary link next to the
+    # confirm button — it is NEVER the confirm target (that is `url`, single-use and
+    # digest-pinned). Absent when the action touches no single record; a host that
+    # predates the field simply omits it. `executed_actions[]` never carries it.
     #
     # `executed_actions[]` is the OPPOSITE of `actions[]` and must never be rendered
     # as a confirm button: those writes ALREADY HAPPENED mid-loop (host autonomy gate

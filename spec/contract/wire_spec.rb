@@ -52,6 +52,9 @@ RSpec.describe "hub contract conformance" do
     )
     expect(result.note).to include("run trace")
     expect(result.actions.first[:slug]).not_to be_empty
+    expect(result.actions.first[:resource_url]).to start_with("http")
+    expect(result.actions.first[:resource_url]).not_to eq(result.actions.first[:url])
+    expect(result.executed_actions.first).not_to have_key(:resource_url)
     expect(result.executed_actions.first[:slug]).not_to be_empty
     expect(result.questions.first[:id]).not_to be_empty
     expect(result.delete_ids).not_to be_empty
