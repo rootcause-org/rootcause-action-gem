@@ -90,4 +90,4 @@ the spine.
    the action invocation, strip inherited `RC_PRINCIPAL_*`, and keep accepting the principal-less
    fixtures unchanged.
 
-Record the hub commit SHA you vendored from, and print it in the suite's output.
+Record the hub commit SHA you vendored from, and print it in the suite's output. Record the **full 40-hex** commit — an abbreviated SHA makes a drift check ambiguous.

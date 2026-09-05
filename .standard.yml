@@ -1,0 +1,11 @@
+# StandardRB is the gate (`bundle exec rake` → standard, then rspec). The repo's
+# house cops live in .rubocop.yml, merged in from here so there is one place to look.
+extend_config:
+  - .rubocop.yml
+
+# `keyword_init: true` is redundant on Ruby >= 3.2, but dropping it is not a no-op:
+# the Struct would also start accepting positional construction. These Structs are
+# public surface of an installed gem, so the keyword-only shape stays deliberate.
+ignore:
+  - "**/*":
+      - Style/RedundantStructKeywordInit

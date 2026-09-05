@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Lint and test
+        run: bundle exec rake
+
+      # The vendored goldens must be the hub's bytes, not a local edit. A wire
+      # change starts in the hub; this is what makes "vendored" mean something.
+      - name: Fixture parity with the contract hub
+        run: |
+          set -euo pipefail
+          hub_sha="$(cat spec/fixtures/contract/HUB_SHA)"
+          git clone --quiet https://github.com/rootcause-org/rootcause-embassy hub
+          git -C hub checkout --quiet "$hub_sha"
+          diff -r hub/fixtures spec/fixtures/contract --exclude HUB_SHA
+
+      # Passing tests on stale fixtures is still out of conformance: fail when the
+      # hub has moved the goldens since the commit we vendored.
+      - name: Drift against the hub's fixtures
+        run: |
+          set -euo pipefail
+          hub_sha="$(cat spec/fixtures/contract/HUB_SHA)"
+          drift="$(git -C hub log --oneline "$hub_sha..origin/main" -- fixtures/)"
+          if [ -n "$drift" ]; then
+            echo "hub fixtures moved since $hub_sha:"
+            echo "$drift"
+            exit 1
+          fi

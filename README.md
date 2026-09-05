@@ -187,6 +187,7 @@ c.trigger_url     = "https://<rootcause>/analyses/<project>" # where start_analy
 c.result_mount_at = "/rootcause/result"                      # route that receives async results
 c.result_handler  = "AnalysisResultHandler"                  # String → lazy-loaded, reload-safe
 c.max_attachment_bytes = 256 * 1024                          # per-attachment inline cap (decoded)
+c.max_total_attachment_bytes = 6 * 1024 * 1024               # aggregate cap per trigger (decoded)
 ```
 
 ```ruby
@@ -267,7 +268,8 @@ side-effects rootcause *proposes* — render them for a human to click, and they
 **invocation route**. The gem never auto-runs them. An action may carry an optional
 **`resource_url`**: an absolute link to the record it would modify in *your own* admin UI. It is
 render-only — a secondary "view record" link beside the confirm button, never the confirm target
-(that is `url`).
+(that is `url`). A `resource_url` that is not an absolute `http(s)` link is dropped from the action;
+the rest of the result is still delivered, because a bad decoration must not cost you the draft.
 
 Two more lists complete the surface:
 
@@ -438,5 +440,11 @@ that matters in your deployment.
 
 ```bash
 bundle install
-bundle exec rake        # standardrb (lint) + rspec
+bundle exec rake        # standardrb (lint, incl. this repo's house cops) + rspec
 ```
+
+House cops live in `lib/rubocop/cop/embassy/` and are wired in through `.rubocop.yml` (merged into
+StandardRB from `.standard.yml`). They guard contract invariants that live in the source as literals:
+the refusal vocabulary, the internal-error log line, and second-long sleeps in specs. CI additionally
+proves `spec/fixtures/contract/` is byte-identical to the contract hub at the recorded `HUB_SHA`, and
+that the hub has not moved those goldens since.

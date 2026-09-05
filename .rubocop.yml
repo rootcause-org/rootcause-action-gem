@@ -1,0 +1,67 @@
+# House cops for this repo, layered on top of StandardRB (which loads this file
+# through `extend_config` in .standard.yml — `bundle exec rake` is still the gate).
+#
+# Each cop guards one invariant from the contract hub (rootcause-embassy) that
+# lives in the source as a literal. They are line checks on purpose: cheap enough
+# that nobody deletes them, specific enough that they only fire on the real thing.
+require:
+  - ./lib/rubocop/cop/embassy/shared_blank_helper.rb
+  - ./lib/rubocop/cop/embassy/long_spec_sleep.rb
+  - ./lib/rubocop/cop/embassy/signature_header_env.rb
+  - ./lib/rubocop/cop/embassy/wire_class_vocabulary.rb
+  - ./lib/rubocop/cop/embassy/internal_error_log_message.rb
+
+# DISABLED until the shared Util helper lands: blank?/present? are still defined
+# per class today, so enabling this now would be red on arrival. Flip Enabled to
+# true once lib/rootcause/embassy/util.rb exists.
+Embassy/SharedBlankHelper:
+  Enabled: false
+  Include:
+    - "lib/**/*.rb"
+  Exclude:
+    - "lib/rootcause/embassy/util.rb"
+    - "lib/rubocop/**/*.rb"
+
+Embassy/LongSpecSleep:
+  Enabled: true
+  Include:
+    - "spec/**/*.rb"
+
+# DISABLED until the shared Rack shell lands: rack.rb and result_rack.rb each still
+# carry their own SIG_HEADER_ENV, so this is red on arrival. Flip Enabled to true
+# once the shell is extracted.
+Embassy/SignatureHeaderEnv:
+  Enabled: false
+  Include:
+    - "lib/**/*.rb"
+  Exclude:
+    - "lib/rootcause/embassy/rack.rb"
+    - "lib/rubocop/**/*.rb"
+
+# The seven wire classes of CONTRACT.md's error table plus method_not_allowed
+# (the 405 liveness floor in planes/actions.md). `action_plane_disabled` is a
+# Ruby-only 503 that has no contract entry yet — allow-listed here until the hub
+# rules on it, NOT because the vocabulary is open.
+Embassy/WireClassVocabulary:
+  Enabled: true
+  Include:
+    - "lib/**/*.rb"
+  Exclude:
+    - "lib/rubocop/**/*.rb"
+  AllowedClasses:
+    - invalid_request
+    - bad_signature
+    - replay
+    - schema_violation
+    - resolve_failed
+    - handler_error
+    - internal_error
+    - method_not_allowed
+    - action_plane_disabled
+
+Embassy/InternalErrorLogMessage:
+  Enabled: true
+  Include:
+    - "lib/**/*.rb"
+  Exclude:
+    - "lib/rubocop/**/*.rb"

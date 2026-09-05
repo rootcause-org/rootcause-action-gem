@@ -28,7 +28,8 @@ Gem::Specification.new do |spec|
   spec.metadata["source_code_uri"] = spec.homepage
   spec.metadata["rubygems_mfa_required"] = "true"
 
-  spec.files = Dir["lib/**/*.rb", "examples/**/*", "SPEC.md", "README.md"]
+  # lib/rubocop holds this repo's house cops — dev tooling, not gem surface.
+  spec.files = Dir["lib/**/*.rb"].grep_v(%r{\Alib/rubocop/}) + Dir["examples/**/*", "SPEC.md", "README.md"]
   spec.require_paths = ["lib"]
 
   # Runtime: stdlib only (Net::HTTP, OpenSSL, Digest, Timeout, JSON). No new deps
