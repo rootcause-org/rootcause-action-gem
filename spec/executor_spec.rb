@@ -92,7 +92,11 @@ RSpec.describe RootCause::Embassy::Executor do
   end
 
   it "kills a hanging body with the hard timeout and returns a structured error" do
-    result = run("sleep 5\n{ done: true }")
+    # Scoped sub-second timeout: this is the only example that has to sit and wait
+    # for the backstop, so it must not pay the suite-wide one.
+    script = "sleep 1\n{ done: true }"
+    result = described_class.new(Wire.config(timeout: 0.05))
+      .run(script: script, params: {}, digest: Wire.digest_of(script))
     expect(result.ok).to be(false)
     expect(result.error[:class]).to eq("Timeout::Error")
     expect(result.return_value).to be_nil

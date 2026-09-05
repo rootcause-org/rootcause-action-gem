@@ -409,10 +409,10 @@ RSpec.describe RootCause::Embassy::Runner do
   describe "total deadline" do
     # Execute backstop deliberately LONGER than the total budget, so only the
     # total deadline can be what fires.
-    let(:config) { Wire.config(total_deadline: 0.2, timeout: 5) }
+    let(:config) { Wire.config(total_deadline: 0.05, timeout: 5) }
 
     it "returns a signed timeout-style failure when the whole invocation overruns" do
-      script = "sleep 2\n{ done: true }"
+      script = "sleep 1\n{ done: true }"
       Wire.stub_fetch(script: script)
 
       reply = handle(Wire.invocation(script: script))
