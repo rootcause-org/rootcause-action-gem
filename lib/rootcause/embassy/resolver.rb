@@ -99,10 +99,13 @@ module RootCause
         File.join(dir, "#{cache_key}.rb")
       end
 
+      # Map mode partitions the cache by project: the host fetch is the project's
+      # authorization check, so a sibling must not inherit a digest another project
+      # warmed. An unknown project never reaches here — SecretSelector already
+      # refused it before the body was verified — and if one ever did, signing the
+      # fetch with no secret fails closed.
       def cache_key_for(hex, project_id)
         return hex unless @config.map_mode?
-
-        raise ResolveError, "unknown project_id" unless @config.secret_for(project_id)
 
         "#{project_id.downcase}-#{hex}"
       end

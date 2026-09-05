@@ -30,8 +30,10 @@ module RootCause
       # `body` is the parsed JSON when the response was JSON (Hash/Array), else
       # the raw String (nil when empty). `field_errors` carries the host's
       # per-field validation rejections from a 4xx `validation_failed` body.
-      # `retryable` is true for transport failures, auth failures and 5xx — a 4xx
-      # is a permanent caller/validation error and must not be retried.
+      # `retryable` is true for transport failures, auth failures, 5xx and the two
+      # transient 4xx (429 rate limit, 408 host-side timeout) — see
+      # retryable_status?. Every other 4xx is a permanent caller/validation error
+      # and must not be retried.
       Response = Struct.new(:ok, :status, :body, :field_errors, :error, :retryable, keyword_init: true) do
         def ok? = !!ok
 
@@ -155,6 +157,11 @@ module RootCause
           uri.query = existing.empty? ? added : "#{existing}&#{added}"
         end
         uri
+      rescue URI::InvalidURIError => e
+        # A malformed URL or port is a caller bug, exactly like the off-origin case
+        # above — raise it instead of letting the generic rescue in `request` bury it
+        # in a retryable Response the caller would then retry forever.
+        raise ArgumentError, "RootCause::Embassy: api path #{path.inspect} is not a valid URL (#{e.message})"
       end
 
       REQUESTS = {

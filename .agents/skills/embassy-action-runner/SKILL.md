@@ -5,8 +5,10 @@ description: Maintain the rootcause Ruby Embassy's signed boundaries — the inb
 
 # Embassy (Ruby)
 
-Read `AGENTS.md` and `SPEC.md` completely before changing behavior. For cross-repo changes, also read
-the host's `WIRE-CONTRACT.md` and `.agents/skills/actions/SKILL.md` in `rootcause`.
+Read `AGENTS.md` and `SPEC.md` completely before changing behavior. For anything that crosses the
+wire, the authority is the contract hub `rootcause-embassy`: `CONTRACT.md`, the matching
+`planes/*.md`, `decisions.md`, and the case list in `conformance.md`. A wire change starts there,
+never here.
 
 Everything lives under `lib/rootcause/embassy/` (the pre-0.3.0 `lib/rootcause/action_runner/` namespace
 is gone). Stdlib only — no runtime dependencies.
@@ -30,7 +32,8 @@ retryable by the host. Handlers must stay idempotent regardless.
 
 ## Trust path (invocation)
 
-- Verify HMAC over raw bytes before JSON parsing (`runner.rb` → `signature.rb`).
+- Verify HMAC over raw bytes before JSON parsing (`runner.rb` → `signature.rb`). A blank secret fails
+  closed in both directions — never sign with one, never accept one.
 - Replay-guard `issued_at` + `nonce`, then validate host-owned fields and model-influenced params.
 - Resolve only a signed, digest-matching `script.rb` through `resolver.rb`.
 - Execute through `executor.rb`; params stay frozen data. Trusted tenant and optional principal context
@@ -57,12 +60,19 @@ wraps the entire pipeline (fetch **and** execute) in `config.total_deadline` (22
 executor's own timeout-style failure envelope on breach. `config.timeout` (20s) is the execute backstop
 *inside* that budget; `validate!` refuses a `total_deadline` that does not exceed it.
 
+`dry_run` is a JSON boolean or absent — nothing else. `parse` refuses a non-boolean with
+`400 invalid_request` **before** the signed script fetch; Ruby truthiness would otherwise read `"no"`
+as "yes, dry run". The envelope is emitted in the hub's canonical key order so the conformance suite
+can compare our own bytes to the goldens (key order itself is not contract).
+
 ## Outbound (client.rb)
 
 - `start_analysis` — signed trigger. Optional `principal:` `{kind:, external_id:, asserted_by:,
   assurance:, tenant_hint:, source_metadata:}`: exact host field names, nils omitted, `kind` +
   `external_id` required together (raises pre-POST). Assert it from the customer app's own
   authenticated session — **never from model output**.
+  Attachments are capped twice, both raised **before** the POST: `max_attachment_bytes` per
+  attachment and `max_total_attachment_bytes` (6 MiB, the host's aggregate limit) across the trigger.
 - `capture_sent_message` — `metadata` is exactly `{resource_type, resource_id}` (strings). It accepts
   `answers: [{id:, values: [...] }]` with a sent body or alone; answers-only capture omits `sent` and
   surfaces the child `analysis_id` returned by the host.
@@ -76,6 +86,10 @@ buttons); `executed_actions[]` **already ran** mid-loop under the host's autonom
 outcomes — never buttons); `questions[]` are answered back over `capture_sent_message`; `delete_ids`
 is the wire's reserved-word `delete` (note keys the run retracts). `reasoning_steps` was gem-only
 fiction and is deleted — the host never sent it.
+
+An action's optional `resource_url` is render-only (hub decision 17). A value that is not an absolute
+`http(s)` URL is dropped from that action and the callback is still acked — the analysis is the
+payload, the decoration is not.
 
 ## File map
 
@@ -94,8 +108,27 @@ fiction and is deleted — the host never sent it.
 - `spec/fixtures/contract/`: vendored canonical goldens — synced wholesale from the contract hub,
   with the source revision recorded in `HUB_SHA`, not hand-edited.
 
+## House cops and CI
+
+`lib/rubocop/cop/embassy/` holds tiny line cops, wired in through `.rubocop.yml` (merged into
+StandardRB via `.standard.yml`), so `bundle exec rake` enforces them:
+
+- `WireClassVocabulary` — a `wire_class:` literal must be in CONTRACT.md's refusal table. Ruby-only
+  `action_plane_disabled` is allow-listed until the hub rules on it.
+- `InternalErrorLogMessage` — the internal_error log line carries the exception class, never its text.
+- `LongSpecSleep` — no multi-second `sleep` in specs; scope a sub-second timeout instead.
+- `SharedBlankHelper` / `SignatureHeaderEnv` — **shipped disabled**, red until the shared `Util` and
+  Rack shell land. Flip `Enabled: true` in `.rubocop.yml` then.
+
+`.github/workflows/ci.yml` runs `bundle exec rake`, then proves `spec/fixtures/contract/` is
+byte-identical to the hub at the recorded `HUB_SHA`, and that the hub has not touched `fixtures/`
+since. Passing tests on stale goldens is still out of conformance.
+
 ## Verification
 
 Run `bundle exec rake` (StandardRB + all RSpec). For wire changes, cover exact signed success,
 tampering, missing/malformed fields, flat context, and param/host separation.
+`spec/contract/wire_spec.rb` carries both halves of the hub's conformance rule: it verifies the hub's
+bytes AND replays Ruby's own serialization back to the goldens (envelopes, health, ack, fetch query,
+trigger/sent-message/answers bodies), injecting the fixtures' reference clock and nonce.
 `Config` validates only requested planes, so chat-only configuration stays action-secret-free.

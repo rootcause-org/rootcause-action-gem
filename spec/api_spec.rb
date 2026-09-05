@@ -302,4 +302,10 @@ RSpec.describe RootCause::Embassy::Api do
         .to raise_error(ArgumentError, /absolute http\(s\) URL/)
     end
   end
+  # planes/api.md: only misconfiguration or a BAD ARGUMENT raises. A malformed URL
+  # is the latter — it must reach the developer, not hide in a retryable Response
+  # that a background job would then retry forever.
+  it "raises ArgumentError for a malformed URL instead of reporting a retryable outcome" do
+    expect { api.get("https://api.example.com:notaport/x") }.to raise_error(ArgumentError, /not a valid URL/)
+  end
 end

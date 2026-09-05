@@ -29,6 +29,15 @@ RSpec.describe RootCause::Embassy::Signature do
     expect(described_class.valid?("", body, secret: secret)).to be(false)
   end
 
+  # CONTRACT.md, "Three keys": a blank key is trivially forgeable, so it fails
+  # closed in BOTH directions — never sign with one, never accept one.
+  it "fails closed on a blank secret when signing and when verifying" do
+    ["", "   ", nil].each do |blank|
+      expect { described_class.sign(body, secret: blank) }.to raise_error(ArgumentError, /secret is required/)
+      expect(described_class.valid?("sha256=whatever", body, secret: blank)).to be(false)
+    end
+  end
+
   describe ".secure_compare" do
     it "is false when lengths differ" do
       expect(described_class.secure_compare("a", "aa")).to be(false)

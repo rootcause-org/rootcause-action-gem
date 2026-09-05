@@ -165,7 +165,7 @@ module RootCause
       end
 
       def log_unexpected(error)
-        @config.logger&.error("[rootcause-result] refused code=internal_error class=#{error.class} msg=#{error.message}")
+        @config.logger&.error("[rootcause-result] refused code=internal_error class=#{error.class}")
       end
 
       def metadata_keys(metadata) = metadata.is_a?(Hash) ? metadata.keys.map(&:to_s).sort : []
