@@ -21,7 +21,9 @@ module RootCause
     # can inspect before confirming. Render it as a secondary link next to the
     # confirm button — it is NEVER the confirm target (that is `url`, single-use and
     # digest-pinned). Absent when the action touches no single record; a host that
-    # predates the field simply omits it. `executed_actions[]` never carries it.
+    # predates the field simply omits it. `executed_actions[]` never carries it. A
+    # value that is not an absolute http(s) URL is dropped from the action rather
+    # than refusing the whole callback.
     #
     # `executed_actions[]` is the OPPOSITE of `actions[]` and must never be rendered
     # as a confirm button: those writes ALREADY HAPPENED mid-loop (host autonomy gate
@@ -92,7 +94,7 @@ module RootCause
           metadata: data[:metadata] || EMPTY_HASH,
           draft: markdown_of(data[:draft]),
           note: markdown_of(summary_note(data[:notes])),
-          actions: data[:actions] || EMPTY_ARRAY,
+          actions: renderable_actions(data[:actions]),
           executed_actions: data[:executed_actions] || EMPTY_ARRAY,
           questions: data[:questions] || EMPTY_ARRAY,
           delete_ids: data[:delete] || EMPTY_ARRAY,
@@ -103,6 +105,26 @@ module RootCause
 
       EMPTY_HASH = {}.freeze
       EMPTY_ARRAY = [].freeze
+
+      # `resource_url` is render-only, so only an absolute http(s) link is worth
+      # rendering. Anything else (javascript:, data:, a bare path) is DROPPED —
+      # silently, and only that key: the analysis result is the valuable payload
+      # and a bad decoration must never cost the reviewer the draft.
+      ABSOLUTE_HTTP_URL = %r{\Ahttps?://}i
+
+      def self.renderable_actions(actions)
+        return EMPTY_ARRAY unless actions.is_a?(Array)
+        return actions unless actions.any? { |action| unrenderable_resource_url?(action) }
+
+        actions.map { |action|
+          unrenderable_resource_url?(action) ? action.except(:resource_url).freeze : action
+        }.freeze
+      end
+
+      def self.unrenderable_resource_url?(action)
+        action.is_a?(Hash) && action.key?(:resource_url) &&
+          !(action[:resource_url].is_a?(String) && ABSOLUTE_HTTP_URL.match?(action[:resource_url]))
+      end
 
       # The markdown body of a content node ({ body_markdown:, body_html: }), as a
       # string. Prefers `body_markdown`; falls back to `body_html` only when markdown

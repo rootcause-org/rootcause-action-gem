@@ -46,7 +46,7 @@ module RootCause
       # @raise [TriggerError] non-2xx, malformed response, or transport failure
       # @raise [Error] chat-only/half-wired setup: ANALYSIS_TRIGGER_URL_REQUIRED or
       #   ACTION_PLANE_DISABLED (both carry code/hint/docs; Error < ArgumentError)
-      # @raise [ArgumentError] an over-cap/malformed attachment, or a principal
+      # @raise [ArgumentError] an over-cap (single or aggregate)/malformed attachment, or a principal
       #   without both kind and external_id
       def start_analysis(subject:, body:, attachments: [], metadata: {}, session_id: nil, tenant: nil, principal: nil, project_id: nil)
         url = @config.trigger_url
@@ -163,10 +163,13 @@ module RootCause
       end
 
       # Validate + canonicalize attachments. Decode each (strict base64) to measure
-      # the cap and prove it is well-formed; fail loud BEFORE sending so the caller
-      # learns of a bad payload without a round-trip. `content_base64` rides on the
-      # wire verbatim (the customer already encoded it).
+      # it against the per-attachment and aggregate caps and to prove it is
+      # well-formed; fail loud BEFORE sending so the caller learns of a bad payload
+      # without a round-trip. `content_base64` rides on the wire verbatim (the
+      # customer already encoded it).
       def normalize_attachments(attachments)
+        total_bytes = 0
+
         Array(attachments).each_with_index.map do |att, i|
           att = stringify(att, i)
           b64 = att["content_base64"].to_s
@@ -175,6 +178,14 @@ module RootCause
           if decoded_bytes > @config.max_attachment_bytes
             raise ArgumentError,
               "attachment #{i}: #{decoded_bytes} decoded bytes exceeds max_attachment_bytes (#{@config.max_attachment_bytes})"
+          end
+
+          # The host caps the AGGREGATE too, so a set of individually-legal files can
+          # still be refused. Fail here, before the round-trip.
+          total_bytes += decoded_bytes
+          if total_bytes > @config.max_total_attachment_bytes
+            raise ArgumentError,
+              "attachments: #{total_bytes} decoded bytes exceeds max_total_attachment_bytes (#{@config.max_total_attachment_bytes})"
           end
 
           {

@@ -137,6 +137,14 @@ module RootCause
           raise InvalidRequest, "unsupported runtime: #{data["runtime"]}"
         end
 
+        # dry_run is a JSON boolean or absent — nothing else. Refuse a non-boolean
+        # HERE, at parse time, so a malformed flag can never reach the signed script
+        # fetch: "no"/0/"false" are all truthy in Ruby, and guessing which one meant
+        # "do not execute" is exactly the ambiguity that would run a live action.
+        if data.key?("dry_run") && data["dry_run"] != true && data["dry_run"] != false
+          raise InvalidRequest, "dry_run must be a boolean"
+        end
+
         validate_tenant_context!(data)
         validate_principal_context!(data)
         data
@@ -165,12 +173,12 @@ module RootCause
           secret: secret
         )
 
-        # WIRE CONTRACT v1 §5 (see WIRE-CONTRACT.md in rootcause): dry_run
-        # runs the full verify→replay→schema→resolve pipeline but SKIPS execution,
-        # returning a signed ok:true Result that proves the contract holds with
-        # zero side effects. Truthiness, not just `== true`, so any truthy host
-        # value (e.g. the JSON boolean) counts.
-        if invocation["dry_run"]
+        # Action plane, dry run (rootcause-embassy CONTRACT.md, planes/actions.md):
+        # the full verify→replay→schema→resolve pipeline runs but execution is
+        # SKIPPED, returning a signed ok:true Result that proves the contract holds
+        # with zero side effects. Strictly `== true`; anything else was already
+        # refused as invalid_request at parse time.
+        if invocation["dry_run"] == true
           return Executor::Result.new(
             ok: true,
             return_value: {"dry_run" => true, "would_execute" => true},
@@ -288,12 +296,15 @@ module RootCause
 
       def clock_ms = Process.clock_gettime(Process::CLOCK_MONOTONIC, :float_millisecond)
 
+      # Key order is not wire contract (the receiver verifies the bytes it got), but
+      # emitting the hub's canonical order lets the conformance suite compare our own
+      # bytes to the goldens directly instead of only structurally.
       def envelope(result)
         {
           ok: result.ok,
           return_value: result.return_value,
-          error: result.error,
           stdout: result.stdout,
+          error: result.error,
           duration_ms: result.duration_ms
         }
       end
@@ -345,7 +356,9 @@ module RootCause
         return unless @config.logger
 
         keys = safe_param_keys(raw_body)
-        @config.logger.error("[rootcause-action] refused code=internal_error class=#{error.class} param_keys=#{keys} msg=#{error.message}")
+        # Class name only: CONTRACT.md logging discipline forbids the message text of
+        # an unexpected exception — it can carry request values.
+        @config.logger.error("[rootcause-action] refused code=internal_error class=#{error.class} param_keys=#{keys}")
       end
 
       def param_keys(params)

@@ -92,6 +92,11 @@ module RootCause
       # sending anything larger. Large files / fetch-URLs are out of scope (v1).
       attr_accessor :max_attachment_bytes
 
+      # AGGREGATE inline cap in DECODED bytes across one trigger's attachments.
+      # The host enforces 6 MiB total regardless of the per-attachment cap, so
+      # many small files still add up to a rejected request; raise before sending.
+      attr_accessor :max_total_attachment_bytes
+
       # --- API plane (see Api, docs/generic-api.md) ---
 
       # Origin of the rootcause API, e.g. "https://app.replypen.com" — paths are
@@ -145,6 +150,7 @@ module RootCause
         @http_read_timeout = 15
         @result_mount_at = "/rootcause/result"
         @max_attachment_bytes = 256 * 1024
+        @max_total_attachment_bytes = 6 * 1024 * 1024
         @chat_base_url = DEFAULT_CHAT_BASE_URL
       end
 

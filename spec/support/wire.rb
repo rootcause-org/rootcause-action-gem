@@ -145,7 +145,7 @@ module Wire
     {
       "analysis_id" => "analysis-uuid-1",
       "session_id" => "session-uuid-1",
-      "metadata" => {"resource_type" => "SupportTicket", "resource_id" => 42},
+      "metadata" => {"resource_type" => "SupportTicket", "resource_id" => "42"},
       "draft" => {"body_markdown" => "Hi there", "body_html" => "<p>Hi there</p>"},
       "notes" => [
         {"kind" => "summary", "body_markdown" => "Summary. [run trace](https://rc/runs/1)", "body_html" => "<p>Summary.</p>"},

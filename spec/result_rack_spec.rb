@@ -41,7 +41,7 @@ RSpec.describe RootCause::Embassy::ResultReceiver do
     expect(RootCause::Embassy::Signature.valid?(reply.signature, reply.body, secret: Wire::SECRET)).to be(true)
 
     delivered = SpecResultHandler.store.fetch("run-1")
-    expect(delivered.metadata).to eq({resource_type: "SupportTicket", resource_id: 42})
+    expect(delivered.metadata).to eq({resource_type: "SupportTicket", resource_id: "42"})
     expect(delivered.draft).to eq("Hi there")
     expect(delivered.note).to eq("Summary. [run trace](https://rc/runs/1)")
   end

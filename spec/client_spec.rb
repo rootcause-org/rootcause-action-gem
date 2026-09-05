@@ -161,6 +161,33 @@ RSpec.describe RootCause::Embassy::Client do
     ).to have_been_made
   end
 
+  # planes/analysis.md: the host caps the AGGREGATE at 6 MiB on top of the
+  # per-attachment cap, so individually-legal files can still be refused.
+  it "raises ArgumentError BEFORE sending when the attachments exceed the aggregate cap" do
+    config.max_attachment_bytes = 64
+    config.max_total_attachment_bytes = 100
+    stub = Wire.stub_trigger
+
+    expect {
+      client.start_analysis(
+        subject: "s", body: "b",
+        attachments: 3.times.map { |i| {filename: "part#{i}.bin", mime_type: "application/octet-stream", content_base64: b64("x" * 40)} }
+      )
+    }.to raise_error(ArgumentError, /exceeds max_total_attachment_bytes/)
+    expect(stub).not_to have_been_requested
+  end
+
+  it "sends a set of attachments that stays within the aggregate cap" do
+    stub = Wire.stub_trigger
+
+    client.start_analysis(
+      subject: "s", body: "b",
+      attachments: 3.times.map { |i| {filename: "part#{i}.bin", mime_type: "text/plain", content_base64: b64("x" * 40)} }
+    )
+
+    expect(stub).to have_been_requested.once
+  end
+
   it "raises ArgumentError BEFORE sending when an attachment is over the cap" do
     config.max_attachment_bytes = 8
     stub = Wire.stub_trigger
