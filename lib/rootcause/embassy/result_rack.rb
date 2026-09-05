@@ -10,6 +10,8 @@ module RootCause
     # invocation path, on the same reverse-channel secret. Reuses Signature,
     # Replay, Result and Config; ResultRackApp is the thin Rack shell over it.
     class ResultReceiver
+      include SignedEndpoint
+
       REQUIRED_FIELDS = %w[analysis_id nonce issued_at].freeze
 
       def initialize(config, nonce_store: nil)
@@ -17,7 +19,7 @@ module RootCause
         @nonce_store = nonce_store || Replay::MemoryStore.new
       end
 
-      # @return [Runner::Reply] a signed ack (200 ok) or a signed structured refusal
+      # @return [Reply] a signed ack (200 ok) or a signed structured refusal
       def handle(raw_body:, signature:)
         return action_plane_disabled unless @config.action_plane_enabled?
 
@@ -34,40 +36,20 @@ module RootCause
         # Expected refusals: bad signature, replay, missing fields, unconfigured
         # handler. Still signed so the host can trust the refusal.
         log_refusal(e)
-        reply(e.status, {ok: false, error: e.wire_payload}, secret)
+        refusal_reply(e, secret)
       rescue => e
         # Fail-closed backstop. A handler exception or any unforeseen condition is a
         # signed, structured 500 — never an unsigned crash, and deliberately NOT an
         # ack: the nonce is released above, so rootcause's redelivery dispatches
-        # again — which is exactly why ResultHandler#process is documented idempotent. Message is the class only
-        # — an unexpected error's message may carry untrusted input.
+        # again — which is exactly why ResultHandler#process is documented idempotent.
         log_unexpected(e)
-        internal = InternalError.new(e.class.name)
-        reply(internal.status, {ok: false, error: internal.wire_payload}, secret)
+        internal_error_reply(e, secret)
       end
 
       private
 
-      # Verify first, parse second: never spend work on an unauthenticated body.
-      def authenticate(raw_body, signature, secret)
-        unless Signature.valid?(signature, raw_body, secret: secret)
-          raise SignatureError, "signature missing or invalid"
-        end
-
-        parse(raw_body)
-      end
-
-      def parse(raw_body)
-        data = JSON.parse(raw_body.to_s)
-        raise InvalidRequest, "result must be a JSON object" unless data.is_a?(Hash)
-
-        missing = REQUIRED_FIELDS.reject { |f| present?(data[f]) }
-        raise InvalidRequest, "missing field(s): #{missing.join(", ")}" unless missing.empty?
-
-        data
-      rescue JSON::ParserError
-        raise InvalidRequest, "body is not valid JSON"
-      end
+      # The result payload carries no host-owned fields beyond the shared three.
+      def parse(raw_body) = parse_required(raw_body, noun: "result")
 
       # Freshness on the RESULT route is deliberately asymmetric with the invocation
       # route: rootcause sends `nonce = run_id`, stable across redeliveries of the
@@ -130,25 +112,6 @@ module RootCause
         raise HandlerError, "result_handler #{name} could not be loaded"
       end
 
-      def reply(status, payload, secret)
-        body = JSON.generate(payload)
-        Runner::Reply.new(status: status, body: body, signature: Signature.sign(body, secret: secret))
-      end
-
-      def selector_failure
-        error = SignatureError.new("signature missing or invalid")
-        Runner::Reply.new(
-          status: error.status,
-          body: JSON.generate(ok: false, error: error.wire_payload),
-          signature: nil
-        )
-      end
-
-      def action_plane_disabled
-        error = ActionPlaneDisabled.new
-        Runner::Reply.new(status: error.status, body: JSON.generate(ok: false, error: error.wire_payload), signature: nil)
-      end
-
       # Customer-side audit: the run id, metadata KEYS only (never values — they
       # transit rootcause), and ok/decline. Never the secret.
       def log(result)
@@ -169,7 +132,6 @@ module RootCause
       end
 
       def metadata_keys(metadata) = metadata.is_a?(Hash) ? metadata.keys.map(&:to_s).sort : []
-      def present?(value) = !value.nil? && value.to_s != ""
     end
 
     # Thin Rack shell over ResultReceiver — the mirror of RackApp for the result
@@ -177,48 +139,17 @@ module RootCause
     #
     #   mount RootCause::Embassy::ResultRackApp.new => RootCause::Embassy.config.result_mount_at
     class ResultRackApp
-      SIG_HEADER_ENV = "HTTP_X_WEBHOOK_SIGNATURE"
-      JSON_TYPE = "application/json"
+      include RackShell
 
       def initialize(receiver: nil)
         @receiver = receiver
-      end
-
-      def call(env)
-        return method_not_allowed unless env["REQUEST_METHOD"] == "POST"
-
-        raw_body = read_body(env)
-        reply = receiver.handle(raw_body: raw_body, signature: env[SIG_HEADER_ENV])
-        respond(reply.status, reply.body, reply.signature)
       end
 
       private
 
       # Resolve lazily so the app can be constructed at require-time (before the
       # initializer runs) yet still bind to the configured receiver per request.
-      def receiver
-        @receiver || RootCause::Embassy.result_receiver
-      end
-
-      def read_body(env)
-        input = env["rack.input"]
-        return "" unless input
-
-        body = input.read || ""
-        input.rewind if input.respond_to?(:rewind)
-        body
-      end
-
-      def respond(status, body, signature)
-        headers = {"content-type" => JSON_TYPE}
-        headers[Signature::HEADER] = signature if signature
-        [status, headers, [body]]
-      end
-
-      def method_not_allowed
-        error = MethodNotAllowed.new("POST required")
-        [error.status, {"content-type" => JSON_TYPE, "allow" => "POST"}, [JSON.generate(ok: false, error: error.wire_payload)]]
-      end
+      def core = @receiver || RootCause::Embassy.result_receiver
     end
   end
 end

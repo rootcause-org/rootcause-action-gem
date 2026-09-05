@@ -19,6 +19,7 @@ is gone). Stdlib only — no runtime dependencies.
 |---|---|---|
 | core | `runner.rb` (`Runner`) | `result_rack.rb` (`ResultReceiver`) |
 | shell | `rack.rb` (`RackApp`) | `result_rack.rb` (`ResultRackApp`) |
+| shared | `signed_endpoint.rb` (verify→parse→signed refusal) | `rack_shell.rb` (body/header/405/503 → Rack triple) |
 | direction | host → gem, runs an action | host → gem, delivers an analysis result |
 | duplicate nonce | **409 replay** | **idempotent signed `200 {"ok":true}` ack** |
 | stale `issued_at` | 409 | 409 |
@@ -95,6 +96,14 @@ payload, the decoration is not.
 
 - `runner.rb`: authenticated invocation pipeline, trusted host-field validation, total deadline.
 - `result_rack.rb`: result route core + Rack shell; idempotent redelivery ack.
+- `signed_endpoint.rb`: the half both inbound cores share — verify-then-parse, required fields,
+  signed refusal/500 backstop, unsigned selector/plane-disabled replies.
+- `rack_shell.rb`: the Rack half both mounts share — raw body, signature header, content type,
+  405 + `allow`, plane-disabled triple. `route` is the hook RackApp uses for its health child.
+- `reply.rb`: the signed `Reply` (status/body/signature) both endpoints return; `Reply.unsigned`
+  for the answers with no key to sign with. `Runner::Reply` stays as an alias.
+- `util.rb`: `blank?`/`present?` (wire semantics), `unset?` (boot-gate semantics, whitespace counts
+  as unset), monotonic clock readers.
 - `replay.rb`: ±5 min window, nonce store (`guard!` raises / `fresh?` reports), `MemoryStore`.
 - `schema.rb`: action param contract and reserved tenant/principal selectors (including
   `principal_claim_*`).

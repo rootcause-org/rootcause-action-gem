@@ -10,9 +10,11 @@ module RootCause
     # run → sign pipeline, fail-closed at every step. The Rack shell is a thin
     # adapter over this; a Sinatra/Rack host could call it directly.
     class Runner
-      # A signed reply, transport-agnostic. `body` is the exact JSON string the
-      # `signature` was computed over — send both verbatim (verify-on-raw).
-      Reply = Struct.new(:status, :body, :signature, keyword_init: true)
+      include SignedEndpoint
+
+      # Kept reachable under its historical name: `Runner::Reply` was the public
+      # return type of #handle before both endpoints shared one.
+      Reply = Embassy::Reply
 
       TRUSTED_TENANT_FIELDS = %w[tenant_id tenant_slug tenant_scope_value].freeze
       PRINCIPAL_CLAIM_NAME_PATTERN = /\A[a-z][a-z0-9_]*\z/
@@ -84,17 +86,15 @@ module RootCause
         # Every expected refusal lands here: bad signature, replay, schema,
         # resolve. Reply is still signed so the host can trust the refusal.
         log_refusal(e, raw_body)
-        reply(e.status, {ok: false, error: e.wire_payload}, secret)
+        refusal_reply(e, secret)
       rescue => e
         # Fail-closed backstop. The pipeline raises typed Errors for expected
         # refusals; anything else reaching here is an unforeseen condition (a
         # malformed shape we didn't anticipate, or a gem bug). Still return a
         # signed, structured 500 — never let an unsigned exception escape the
-        # handler. Message is the class only: an unexpected error's message may
-        # carry untrusted input, so we don't echo it on the wire.
+        # handler.
         log_refusal_unexpected(e, raw_body)
-        internal = InternalError.new(e.class.name)
-        reply(internal.status, {ok: false, error: internal.wire_payload}, secret)
+        internal_error_reply(e, secret)
       end
 
       # Same shape the executor produces for its own timeout, so the host sees one
@@ -117,21 +117,10 @@ module RootCause
         @config.logger&.error("[rootcause-action] refused code=deadline total_deadline=#{@config.total_deadline}")
       end
 
-      # Verify first, parse second: never spend work on an unauthenticated body.
-      def authenticate(raw_body, signature, secret)
-        unless Signature.valid?(signature, raw_body, secret: secret)
-          raise SignatureError, "signature missing or invalid"
-        end
-
-        parse(raw_body)
-      end
-
+      # Host-owned fields on top of the shared required-field check. Everything
+      # here is trusted-because-signed; params are the schema's business.
       def parse(raw_body)
-        data = JSON.parse(raw_body.to_s)
-        raise InvalidRequest, "invocation must be a JSON object" unless data.is_a?(Hash)
-
-        missing = REQUIRED_FIELDS.reject { |f| present?(data[f]) }
-        raise InvalidRequest, "missing field(s): #{missing.join(", ")}" unless missing.empty?
+        data = parse_required(raw_body, noun: "invocation")
 
         if data["runtime"] && data["runtime"].to_s != "ruby"
           raise InvalidRequest, "unsupported runtime: #{data["runtime"]}"
@@ -148,8 +137,6 @@ module RootCause
         validate_tenant_context!(data)
         validate_principal_context!(data)
         data
-      rescue JSON::ParserError
-        raise InvalidRequest, "body is not valid JSON"
       end
 
       def run(invocation, secret)
@@ -294,7 +281,7 @@ module RootCause
           .transform_values { |value| value.is_a?(Array) ? JSON.generate(value) : value.to_s })
       end
 
-      def clock_ms = Process.clock_gettime(Process::CLOCK_MONOTONIC, :float_millisecond)
+      def clock_ms = Util.monotonic_ms
 
       # Key order is not wire contract (the receiver verifies the bytes it got), but
       # emitting the hub's canonical order lets the conformance suite compare our own
@@ -307,27 +294,6 @@ module RootCause
           error: result.error,
           duration_ms: result.duration_ms
         }
-      end
-
-      def reply(status, payload, secret)
-        body = JSON.generate(payload)
-        Reply.new(status: status, body: body, signature: Signature.sign(body, secret: secret))
-      end
-
-      # No map entry means no response key. Do not parse beyond the selector,
-      # touch replay, or leak which projects this shared mount serves.
-      def selector_failure
-        error = SignatureError.new("signature missing or invalid")
-        Reply.new(
-          status: error.status,
-          body: JSON.generate(ok: false, error: error.wire_payload),
-          signature: nil
-        )
-      end
-
-      def action_plane_disabled
-        error = ActionPlaneDisabled.new
-        Reply.new(status: error.status, body: JSON.generate(ok: false, error: error.wire_payload), signature: nil)
       end
 
       # Customer-side audit: identifiers and shape only. Never the secret, never
@@ -371,8 +337,6 @@ module RootCause
       rescue JSON::ParserError, TypeError
         []
       end
-
-      def present?(value) = !value.nil? && value.to_s != ""
     end
   end
 end

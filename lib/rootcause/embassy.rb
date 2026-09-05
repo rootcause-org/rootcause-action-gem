@@ -1,9 +1,13 @@
 # frozen_string_literal: true
 
 require_relative "embassy/version"
+require_relative "embassy/util"
 require_relative "embassy/errors"
 require_relative "embassy/config"
 require_relative "embassy/signature"
+require_relative "embassy/reply"
+require_relative "embassy/rack_shell"
+require_relative "embassy/signed_endpoint"
 require_relative "embassy/secret_selector"
 require_relative "embassy/http"
 require_relative "embassy/schema"
