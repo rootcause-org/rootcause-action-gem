@@ -11,11 +11,8 @@ require:
   - ./lib/rubocop/cop/embassy/wire_class_vocabulary.rb
   - ./lib/rubocop/cop/embassy/internal_error_log_message.rb
 
-# DISABLED until the shared Util helper lands: blank?/present? are still defined
-# per class today, so enabling this now would be red on arrival. Flip Enabled to
-# true once lib/rootcause/embassy/util.rb exists.
 Embassy/SharedBlankHelper:
-  Enabled: false
+  Enabled: true
   Include:
     - "lib/**/*.rb"
   Exclude:
@@ -27,15 +24,12 @@ Embassy/LongSpecSleep:
   Include:
     - "spec/**/*.rb"
 
-# DISABLED until the shared Rack shell lands: rack.rb and result_rack.rb each still
-# carry their own SIG_HEADER_ENV, so this is red on arrival. Flip Enabled to true
-# once the shell is extracted.
 Embassy/SignatureHeaderEnv:
-  Enabled: false
+  Enabled: true
   Include:
     - "lib/**/*.rb"
   Exclude:
-    - "lib/rootcause/embassy/rack.rb"
+    - "lib/rootcause/embassy/rack_shell.rb"
     - "lib/rubocop/**/*.rb"
 
 # The seven wire classes of CONTRACT.md's error table plus method_not_allowed
