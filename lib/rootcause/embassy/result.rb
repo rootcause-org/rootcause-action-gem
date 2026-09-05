@@ -133,8 +133,8 @@ module RootCause
         return nil unless node.is_a?(Hash)
 
         value = node[:body_markdown]
-        value = node[:body_html] if blank?(value)
-        blank?(value) ? nil : value
+        value = node[:body_html] if Util.blank?(value)
+        Util.blank?(value) ? nil : value
       end
 
       # Pick the single summary note out of `notes[]`. The host discriminates by
@@ -156,8 +156,6 @@ module RootCause
 
         (node[:key] || node[:kind])&.to_s
       end
-
-      def self.blank?(value) = value.nil? || value.to_s == ""
 
       # Deep symbol-keying + freeze. Symbol keys match the documented accessors
       # (e.g. result.metadata[:resource_id]); freezing keeps the bag immutable so a

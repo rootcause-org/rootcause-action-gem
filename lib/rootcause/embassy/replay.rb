@@ -97,7 +97,7 @@ module RootCause
           @expiries.delete_if { |_, deadline| deadline <= now }
         end
 
-        def clock = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        def clock = Util.monotonic_now
       end
     end
   end

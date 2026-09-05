@@ -91,7 +91,7 @@ module RootCause
         end
 
         # Monotonic: immune to wall-clock jumps (NTP, suspend).
-        def now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        def now = Util.monotonic_now
 
         def exchange(base_url, refresh_token, config)
           uri = URI.join(base_url.to_s.chomp("/") + "/", "oauth/token")

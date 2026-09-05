@@ -27,7 +27,9 @@ module RootCause
       # The host also allows 60s clock skew.
       DEFAULT_TTL = 7200
       MAX_TTL = 24 * 60 * 60
-      DEFAULT_BASE_URL = "https://app.replypen.com"
+      # One literal, owned by Config (ROOTCAUSE_CHAT_BASE_URL's default); kept reachable here
+      # because the widget tag reads it directly.
+      DEFAULT_BASE_URL = Config::DEFAULT_CHAT_BASE_URL
 
       # How the identity was established, carried through to rootcause as the principal's assurance
       # level. "customer_backend_jwt" = asserted by the customer's own authenticated server session.
@@ -102,9 +104,9 @@ module RootCause
         }
         # Omitted rather than blank: the host reads a present-but-empty tenant as "no tenant", and an
         # explicit null would be indistinguishable while making the wire noisier.
-        claims["tenant"] = tenant.to_s unless blank?(tenant)
-        claims["locale"] = locale.to_s unless blank?(locale)
-        claims["color_scheme"] = color_scheme.to_s unless blank?(color_scheme)
+        claims["tenant"] = tenant.to_s unless Util.blank?(tenant)
+        claims["locale"] = locale.to_s unless Util.blank?(locale)
+        claims["color_scheme"] = color_scheme.to_s unless Util.blank?(color_scheme)
 
         encode(claims, secret)
       end
@@ -143,10 +145,10 @@ module RootCause
           "data-rc-project" => config.chat_project.to_s,
           "data-rc-token" => token(config: config, locale: locale, color_scheme: color_scheme, **token_options)
         }
-        attrs["data-rc-mode"] = mode unless blank?(mode)
-        attrs["data-rc-target"] = target unless blank?(target)
-        attrs["data-rc-locale"] = locale.to_s unless blank?(locale)
-        attrs["data-rc-color-scheme"] = color_scheme.to_s unless blank?(color_scheme)
+        attrs["data-rc-mode"] = mode unless Util.blank?(mode)
+        attrs["data-rc-target"] = target unless Util.blank?(target)
+        attrs["data-rc-locale"] = locale.to_s unless Util.blank?(locale)
+        attrs["data-rc-color-scheme"] = color_scheme.to_s unless Util.blank?(color_scheme)
         rendered = attrs.map { |k, v| %(#{k}="#{CGI.escapeHTML(v)}") }.join(" ")
         "<script #{rendered}></script>"
       end
@@ -174,8 +176,8 @@ module RootCause
         rescue URI::InvalidURIError
           raise Error.public("ORIGIN_INVALID", "Set origin to a valid http or https scheme://host[:port].")
         end
-        unless %w[http https].include?(uri.scheme) && !blank?(uri.host) && uri.userinfo.nil? &&
-            blank?(uri.query) && blank?(uri.fragment) && ["", "/"].include?(uri.path.to_s)
+        unless %w[http https].include?(uri.scheme) && !Util.blank?(uri.host) && uri.userinfo.nil? &&
+            Util.blank?(uri.query) && Util.blank?(uri.fragment) && ["", "/"].include?(uri.path.to_s)
           raise Error.public(
             "ORIGIN_INVALID",
             "Set origin to scheme://host[:port] without credentials, path, query, or fragment."
@@ -187,8 +189,8 @@ module RootCause
 
       def normalize_base_url(raw)
         uri = URI.parse(raw)
-        unless %w[http https].include?(uri.scheme) && !blank?(uri.host) && uri.userinfo.nil? &&
-            blank?(uri.query) && blank?(uri.fragment) && ["", "/"].include?(uri.path.to_s)
+        unless %w[http https].include?(uri.scheme) && !Util.blank?(uri.host) && uri.userinfo.nil? &&
+            Util.blank?(uri.query) && Util.blank?(uri.fragment) && ["", "/"].include?(uri.path.to_s)
           raise URI::InvalidURIError
         end
 
@@ -202,9 +204,7 @@ module RootCause
         presence(value) || raise(Error.public(code, hint))
       end
 
-      def presence(value) = blank?(value) ? nil : value.to_s
-
-      def blank?(value) = value.nil? || value.to_s.empty?
+      def presence(value) = Util.blank?(value) ? nil : value.to_s
     end
   end
 end

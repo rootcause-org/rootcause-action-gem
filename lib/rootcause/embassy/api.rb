@@ -119,14 +119,14 @@ module RootCause
 
       def base_url
         url = @config.api_base_url
-        raise ArgumentError, "RootCause::Embassy: api_base_url is not configured" if blank?(url)
+        raise ArgumentError, "RootCause::Embassy: api_base_url is not configured" if Util.blank?(url)
 
         url.to_s
       end
 
       def api_key
         key = @config.api_key
-        raise ArgumentError, "RootCause::Embassy: api_key is not configured" if blank?(key)
+        raise ArgumentError, "RootCause::Embassy: api_key is not configured" if Util.blank?(key)
 
         key.to_s
       end
@@ -137,7 +137,7 @@ module RootCause
       # long as it points at that same origin (a typo must not leak the bearer to
       # another host).
       def build_uri(path, params)
-        raise ArgumentError, "RootCause::Embassy: api path is required" if blank?(path)
+        raise ArgumentError, "RootCause::Embassy: api path is required" if Util.blank?(path)
 
         base = URI(base_url.to_s.chomp("/"))
         uri = URI(path.to_s)
@@ -234,8 +234,6 @@ module RootCause
 
         @config.logger.info("[rootcause-api] #{method.to_s.upcase} #{uri.path} → #{status}")
       end
-
-      def blank?(value) = value.nil? || value.to_s.empty?
     end
   end
 end

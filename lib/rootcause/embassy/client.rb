@@ -50,7 +50,7 @@ module RootCause
       #   without both kind and external_id
       def start_analysis(subject:, body:, attachments: [], metadata: {}, session_id: nil, tenant: nil, principal: nil, project_id: nil)
         url = @config.trigger_url
-        if blank?(url)
+        if Util.blank?(url)
           raise Error.public("ANALYSIS_TRIGGER_URL_REQUIRED", "Set ROOTCAUSE_TRIGGER_URL before starting an analysis.")
         end
 
@@ -65,8 +65,8 @@ module RootCause
         }
         # Only carry session_id on a follow-up; the first turn omits it and the host
         # mints one, returned in the 202 below.
-        payload["session_id"] = session_id unless blank?(session_id)
-        payload["tenant"] = tenant unless blank?(tenant)
+        payload["session_id"] = session_id unless Util.blank?(session_id)
+        payload["tenant"] = tenant unless Util.blank?(tenant)
         payload["principal"] = normalize_principal(principal) unless principal.nil?
         raw = JSON.generate(payload)
 
@@ -99,16 +99,16 @@ module RootCause
       #   SENT_MESSAGE_CONTENT_REQUIRED, SENT_MESSAGE_INVALID, or ACTION_PLANE_DISABLED
       def capture_sent_message(session_id:, sent_body: nil, proposed_body: nil, sender: nil, metadata: {}, answers: [], project_id: nil)
         url = @config.sent_message_url
-        if blank?(url)
+        if Util.blank?(url)
           raise Error.public("SENT_MESSAGE_URL_REQUIRED", "Set ROOTCAUSE_SENT_MESSAGE_URL before capturing a sent message.")
         end
-        if blank?(session_id)
+        if Util.blank?(session_id)
           raise Error.public("SESSION_ID_REQUIRED", "Set session_id to the ReplyPen session being continued.")
         end
 
         metadata ||= {}
         answers = normalize_answers(answers)
-        if blank?(sent_body) && answers.empty?
+        if Util.blank?(sent_body) && answers.empty?
           raise Error.public(
             "SENT_MESSAGE_CONTENT_REQUIRED",
             "Set sent_body, answers, or both before capturing a sent message."
@@ -119,13 +119,13 @@ module RootCause
           "type" => "sent_message",
           "session_id" => session_id
         }
-        unless blank?(sent_body)
+        unless Util.blank?(sent_body)
           sent = {"body" => sent_body}
-          sent["sender"] = sender unless blank?(sender)
+          sent["sender"] = sender unless Util.blank?(sender)
           payload["sent"] = sent
         end
         # Absent `proposed` tells the host to treat the reply as pure signal.
-        payload["proposed"] = {"body" => proposed_body} unless blank?(proposed_body)
+        payload["proposed"] = {"body" => proposed_body} unless Util.blank?(proposed_body)
         payload["metadata"] = metadata
         payload["answers"] = answers unless answers.empty?
         payload["nonce"] = SecureRandom.uuid
@@ -152,8 +152,8 @@ module RootCause
       def normalize_principal(principal)
         raise ArgumentError, "principal must be an object" unless principal.is_a?(Hash)
 
-        fields = principal.each_with_object({}) { |(k, v), h| h[k.to_s] = v }
-        missing = %w[kind external_id].reject { |f| present?(fields[f]) }
+        fields = stringify_keys(principal)
+        missing = %w[kind external_id].reject { |f| Util.present?(fields[f]) }
         raise ArgumentError, "principal requires #{missing.join(" and ")}" unless missing.empty?
 
         PRINCIPAL_FIELDS.each_with_object({}) do |field, out|
@@ -171,7 +171,9 @@ module RootCause
         total_bytes = 0
 
         Array(attachments).each_with_index.map do |att, i|
-          att = stringify(att, i)
+          raise ArgumentError, "attachment #{i}: must be an object" unless att.is_a?(Hash)
+
+          att = stringify_keys(att)
           b64 = att["content_base64"].to_s
           decoded_bytes = decode!(b64, i)
 
@@ -202,10 +204,10 @@ module RootCause
             raise Error.public("SENT_MESSAGE_INVALID", "Set each answer to an id and a non-empty string values list.")
           end
 
-          fields = answer.each_with_object({}) { |(key, value), out| out[key.to_s] = value }
+          fields = stringify_keys(answer)
           id = fields["id"]
           values = fields["values"]
-          unless present?(id) && values.is_a?(Array) && !values.empty? && values.all? { |value| value.is_a?(String) }
+          unless Util.present?(id) && values.is_a?(Array) && !values.empty? && values.all? { |value| value.is_a?(String) }
             raise Error.public(
               "SENT_MESSAGE_INVALID",
               "Set each answer to an id and a non-empty string values list.",
@@ -215,12 +217,6 @@ module RootCause
 
           {"id" => id.to_s, "values" => values}
         end
-      end
-
-      def stringify(att, i)
-        raise ArgumentError, "attachment #{i}: must be an object" unless att.is_a?(Hash)
-
-        att.each_with_object({}) { |(k, v), h| h[k.to_s] = v }
       end
 
       # Strict RFC 4648 decode via String#unpack (stdlib, no `base64` require) —
@@ -255,7 +251,7 @@ module RootCause
         end
 
         data = JSON.parse(response.body.to_s)
-        unless data.is_a?(Hash) && present?(data["analysis_id"])
+        unless data.is_a?(Hash) && Util.present?(data["analysis_id"])
           raise TriggerError, "analysis trigger response missing analysis_id"
         end
 
@@ -316,8 +312,7 @@ module RootCause
       end
 
       def metadata_keys(metadata) = metadata.is_a?(Hash) ? metadata.keys.map(&:to_s).sort : []
-      def blank?(value) = value.nil? || value.to_s.empty?
-      def present?(value) = !value.nil? && value.to_s != ""
+      def stringify_keys(hash) = hash.each_with_object({}) { |(key, value), out| out[key.to_s] = value }
     end
   end
 end

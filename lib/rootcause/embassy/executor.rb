@@ -159,7 +159,7 @@ module RootCause
       end
 
       def elapsed_ms(started) = (clock_ms - started).round
-      def clock_ms = Process.clock_gettime(Process::CLOCK_MONOTONIC, :float_millisecond)
+      def clock_ms = Util.monotonic_ms
     end
 
     # The action ran but returned something JSON can't represent — treated as a

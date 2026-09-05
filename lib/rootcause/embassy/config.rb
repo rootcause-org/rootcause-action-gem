@@ -166,13 +166,13 @@ module RootCause
       def action_plane_enabled? = reverse_channel_configured?
 
       def action_plane_requested?
-        reverse_channel_configured? || !blank?(fetch_url) || !blank?(trigger_url) ||
-          !blank?(sent_message_url) || !result_handler.nil? || require_tenant_context ||
+        reverse_channel_configured? || !unset?(fetch_url) || !unset?(trigger_url) ||
+          !unset?(sent_message_url) || !result_handler.nil? || require_tenant_context ||
           (tenantless_actions.respond_to?(:empty?) && !tenantless_actions.empty?)
       end
 
       # True once the API plane is wired far enough to make a call.
-      def api_configured? = !blank?(api_base_url) && !blank?(api_key)
+      def api_configured? = !unset?(api_base_url) && !unset?(api_key)
 
       def map_mode? = !secrets.nil?
 
@@ -194,7 +194,7 @@ module RootCause
         end
 
         selected = secret_for(project_id)
-        return selected unless blank?(selected)
+        return selected unless unset?(selected)
 
         raise Error.public("ACTION_PROJECT_UNKNOWN", "Set project_id to a UUID present in the configured secrets map.")
       end
@@ -203,7 +203,7 @@ module RootCause
 
       def validate_action!
         validate_reverse_secrets!
-        if blank?(fetch_url)
+        if unset?(fetch_url)
           raise Error.public("ACTION_FETCH_URL_REQUIRED", "Set ROOTCAUSE_FETCH_URL before enabling actions or analysis.")
         end
         # When the reverse channel is active (secret present), the placeholder
@@ -255,16 +255,16 @@ module RootCause
       # mistake rather than a first-call surprise in a background job. Public because Api.for
       # validates a per-project credential pair through the very same rules.
       def validate_api!
-        return if blank?(api_base_url) && blank?(api_key)
+        return if unset?(api_base_url) && unset?(api_key)
 
-        if blank?(api_base_url)
+        if unset?(api_base_url)
           raise Error.public(
             "API_BASE_URL_REQUIRED",
             "Set ROOTCAUSE_API_BASE_URL when ROOTCAUSE_API_KEY is configured.",
             "api_base_url is required when api_key is set"
           )
         end
-        if blank?(api_key)
+        if unset?(api_key)
           raise Error.public(
             "API_KEY_REQUIRED",
             "Set ROOTCAUSE_API_KEY when ROOTCAUSE_API_BASE_URL is configured.",
@@ -281,7 +281,7 @@ module RootCause
       end
 
       # True once chat is wired far enough to mint a token.
-      def chat_configured? = !blank?(chat_secret) && !blank?(chat_project)
+      def chat_configured? = !unset?(chat_secret) && !unset?(chat_project)
 
       private
 
@@ -289,12 +289,12 @@ module RootCause
       # Once ANY of them is set the deployment intends chat, so a half-wired one is a boot-time
       # mistake, not a runtime surprise.
       def validate_chat!
-        return if blank?(chat_secret) && blank?(chat_project)
+        return if unset?(chat_secret) && unset?(chat_project)
 
-        if blank?(chat_secret)
+        if unset?(chat_secret)
           raise Error.public("CHAT_SECRET_REQUIRED", "Set ROOTCAUSE_CHAT_SECRET to the project's chat signing secret.")
         end
-        if blank?(chat_project)
+        if unset?(chat_project)
           raise Error.public("CHAT_PROJECT_REQUIRED", "Set ROOTCAUSE_CHAT_PROJECT to the public ReplyPen project slug.")
         end
         # The two secrets are different privilege boundaries; the same value in both means one of the
@@ -320,15 +320,17 @@ module RootCause
         true
       end
 
-      def blank?(value) = value.nil? || value.to_s.strip.empty?
+      # Boot gates read a whitespace-only value as unset (see Util) — a stray space in an
+      # ENV var is a misconfiguration, never a credential.
+      def unset?(value) = Util.unset?(value)
 
       def validate_reverse_secrets!
         if map_mode?
-          unless blank?(secret)
+          unless unset?(secret)
             raise Error.public("ACTION_SECRETS_INVALID", "Configure exactly one of secret or secrets, never both.")
           end
           unless secrets.is_a?(Hash) && !secrets.empty? &&
-              secrets.all? { |project_id, value| project_uuid?(project_id) && value.is_a?(String) && !blank?(value) }
+              secrets.all? { |project_id, value| project_uuid?(project_id) && value.is_a?(String) && !unset?(value) }
             raise Error.public(
               "ACTION_SECRETS_INVALID",
               "Set secrets to a non-empty map of project UUIDs to non-blank action reverse secrets."
@@ -343,7 +345,7 @@ module RootCause
             map[canonical] = value
           end
           self.secrets = normalized
-        elsif blank?(secret)
+        elsif unset?(secret)
           raise Error.public(
             "ACTION_SECRET_REQUIRED",
             "Set ROOTCAUSE_ACTION_SECRET, or a secrets map, before enabling actions or analysis."
@@ -351,7 +353,7 @@ module RootCause
         end
       end
 
-      def reverse_channel_configured? = !blank?(secret) || (secrets.is_a?(Hash) && !secrets.empty?)
+      def reverse_channel_configured? = !unset?(secret) || (secrets.is_a?(Hash) && !secrets.empty?)
       def reverse_secrets = map_mode? ? secrets.values : [secret]
       def project_uuid?(value) = value.is_a?(String) && /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i.match?(value)
     end
