@@ -121,21 +121,14 @@ RSpec.describe RootCause::Embassy::Executor do
     expect(result.error[:class]).to eq("RootCause::Embassy::NonSerializableResult")
   end
 
-  it "captures stdout when enabled" do
-    result = run("puts 'hello'\n{ ok: true }")
-    expect(result.stdout).to eq("hello\n")
-  end
+  it "captures stdout, caps it at max_stdout_bytes, and omits it when disabled" do
+    expect(run("puts 'hello'\n{ ok: true }").stdout).to eq("hello\n")
 
-  it "truncates stdout to max_stdout_bytes" do
     config.max_stdout_bytes = 10
-    result = run("print 'x' * 100\n{ ok: true }")
-    expect(result.stdout.bytesize).to eq(10)
-  end
+    expect(run("print 'x' * 100\n{ ok: true }").stdout.bytesize).to eq(10)
 
-  it "omits stdout capture when disabled" do
     config.capture_stdout = false
-    result = run("puts 'hello'\n{ ok: true }")
-    expect(result.stdout).to eq("")
+    expect(run("puts 'hello'\n{ ok: true }").stdout).to eq("")
   end
 
   it "restores $stdout even when the body raises" do

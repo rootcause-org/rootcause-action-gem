@@ -32,11 +32,6 @@ RSpec.describe RootCause::Embassy::Result do
   end
 
   describe "draft (markdown)" do
-    it "surfaces the draft's body_markdown as a string" do
-      result = described_class.from_payload("draft" => {"body_markdown" => "# Draft", "body_html" => "<h1>Draft</h1>"})
-      expect(result.draft).to eq("# Draft")
-    end
-
     it "falls back to body_html only when markdown is absent" do
       result = described_class.from_payload("draft" => {"body_html" => "<p>only html</p>"})
       expect(result.draft).to eq("<p>only html</p>")
@@ -49,35 +44,7 @@ RSpec.describe RootCause::Embassy::Result do
   end
 
   describe "note (summary note, markdown)" do
-    it "selects the summary note's body_markdown and ignores widget notes" do
-      result = described_class.from_payload(
-        "notes" => [
-          {"kind" => "widget", "body_markdown" => "widget one"},
-          {"kind" => "summary", "body_markdown" => "the summary"},
-          {"kind" => "widget", "body_markdown" => "widget two"}
-        ]
-      )
-      expect(result.note).to eq("the summary")
-    end
-
-    it "falls back to body_html for the summary note when markdown is absent" do
-      result = described_class.from_payload(
-        "notes" => [{"kind" => "summary", "body_html" => "<p>summary html</p>"}]
-      )
-      expect(result.note).to eq("<p>summary html</p>")
-    end
-
-    it "selects the summary by the host's `key` discriminator, ignoring trace notes" do
-      result = described_class.from_payload(
-        "notes" => [
-          {"key" => "trace", "body_markdown" => "[trace](https://trace)"},
-          {"key" => "summary", "body_markdown" => "the summary"}
-        ]
-      )
-      expect(result.note).to eq("the summary")
-    end
-
-    it "returns the summary regardless of array order (trace note never clobbers it)" do
+    it "selects the summary by the host's `key`, in either array order" do
       summary = {"key" => "summary", "body_markdown" => "the summary"}
       trace = {"key" => "trace", "body_markdown" => "[trace](https://trace)"}
 

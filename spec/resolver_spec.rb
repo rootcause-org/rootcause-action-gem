@@ -8,12 +8,6 @@ RSpec.describe RootCause::Embassy::Resolver do
   let(:config) { Wire.config }
   let(:resolver) { described_class.new(config) }
 
-  it "fetches, verifies the digest, and returns the body on a cache miss" do
-    stub = Wire.stub_fetch(script: script)
-    expect(resolver.resolve(action_id: "a", digest: digest, project_id: "p1")).to eq(script)
-    expect(stub).to have_been_requested
-  end
-
   it "signs the fetch request over the canonical query string" do
     Wire.stub_fetch(script: script)
     resolver.resolve(action_id: "a", digest: digest, project_id: "p1")
@@ -23,9 +17,11 @@ RSpec.describe RootCause::Embassy::Resolver do
     ).to have_been_made
   end
 
-  it "uses the in-memory cache on a second resolve (one fetch only)" do
+  it "fetches and digest-verifies on a miss, then serves the second resolve from memory" do
     stub = Wire.stub_fetch(script: script)
-    2.times { resolver.resolve(action_id: "a", digest: digest, project_id: "p1") }
+    2.times do
+      expect(resolver.resolve(action_id: "a", digest: digest, project_id: "p1")).to eq(script)
+    end
     expect(stub).to have_been_requested.once
   end
 

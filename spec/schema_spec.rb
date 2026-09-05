@@ -7,35 +7,30 @@ RSpec.describe RootCause::Embassy::Schema do
     described_class.validate!(params, schema)
   end
 
-  describe "each supported type" do
-    it "accepts string" do
-      out = validate({"x" => "hi"}, {"x" => {"type" => "string"}})
-      expect(out).to eq({x: "hi"})
+  # The whole type vocabulary as one table: what each type accepts, and the
+  # near-misses it must refuse (a float for integer, a boolean for a number, a
+  # mixed array). Coercion is never an option — a type mismatch is a refusal.
+  it "accepts each supported type and refuses its near-misses" do
+    [
+      ["string", "hi"],
+      ["integer", 3],
+      ["number", 3],
+      ["number", 3.5],
+      ["boolean", false],
+      ["string[]", %w[a b]]
+    ].each do |type, value|
+      expect(validate({"x" => value}, {"x" => {"type" => type}})).to eq({x: value}), "#{type}: #{value.inspect}"
     end
 
-    it "accepts integer but rejects a float for it" do
-      expect(validate({"x" => 3}, {"x" => {"type" => "integer"}})).to eq({x: 3})
-      expect { validate({"x" => 3.5}, {"x" => {"type" => "integer"}}) }.to raise_error(SchemaError)
-    end
-
-    it "accepts number for both integer and float" do
-      expect(validate({"x" => 3}, {"x" => {"type" => "number"}})).to eq({x: 3})
-      expect(validate({"x" => 3.5}, {"x" => {"type" => "number"}})).to eq({x: 3.5})
-    end
-
-    it "accepts boolean true/false but not a string" do
-      expect(validate({"x" => false}, {"x" => {"type" => "boolean"}})).to eq({x: false})
-      expect { validate({"x" => "true"}, {"x" => {"type" => "boolean"}}) }.to raise_error(SchemaError)
-    end
-
-    it "does not accept a boolean as integer or number" do
-      expect { validate({"x" => true}, {"x" => {"type" => "integer"}}) }.to raise_error(SchemaError)
-      expect { validate({"x" => true}, {"x" => {"type" => "number"}}) }.to raise_error(SchemaError)
-    end
-
-    it "accepts string[] of strings, rejects a mixed array" do
-      expect(validate({"x" => %w[a b]}, {"x" => {"type" => "string[]"}})).to eq({x: %w[a b]})
-      expect { validate({"x" => ["a", 1]}, {"x" => {"type" => "string[]"}}) }.to raise_error(SchemaError)
+    [
+      ["integer", 3.5],
+      ["boolean", "true"],
+      ["integer", true],
+      ["number", true],
+      ["string[]", ["a", 1]]
+    ].each do |type, value|
+      expect { validate({"x" => value}, {"x" => {"type" => type}}) }
+        .to raise_error(SchemaError), "#{type}: #{value.inspect}"
     end
   end
 

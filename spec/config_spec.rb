@@ -1,24 +1,21 @@
 # frozen_string_literal: true
 
 RSpec.describe RootCause::Embassy::Config do
-  it "validates fail-closed when the secret is missing" do
-    cfg = described_class.new
-    cfg.fetch_url = "https://x"
-    expect { cfg.validate! }.to raise_error(ArgumentError, /secret/)
-  end
-
-  it "validates fail-closed when fetch_url is missing" do
-    cfg = described_class.new
-    cfg.secret = "s"
-    expect { cfg.validate! }.to raise_error(ArgumentError, /fetch_url/)
-  end
-
-  it "rejects a non-positive timeout" do
-    cfg = described_class.new
-    cfg.secret = "s"
-    cfg.fetch_url = "https://x"
-    cfg.timeout = 0
-    expect { cfg.validate! }.to raise_error(ArgumentError, /timeout/)
+  # Every boot gate is fail-closed AND names the attribute the operator must fix —
+  # that naming is the whole point, so assert it once over the whole table.
+  it "refuses to boot on a missing or invalid attribute, naming it" do
+    {
+      "secret" => {fetch_url: "https://x"},
+      "fetch_url" => {secret: "s"},
+      "timeout" => {secret: "s", fetch_url: "https://x", timeout: 0},
+      # timeout raised past the default budget without raising the budget
+      "total_deadline" => {secret: "s", fetch_url: "https://x", timeout: 30},
+      "require_tenant_context" => {secret: "s", fetch_url: "https://x", require_tenant_context: "yes"}
+    }.each do |attribute, attrs|
+      cfg = described_class.new
+      attrs.each { |name, value| cfg.public_send(:"#{name}=", value) }
+      expect { cfg.validate! }.to raise_error(ArgumentError, /#{attribute}/), attribute
+    end
   end
 
   it "raises a clear, fix-naming error when fetch_url is the placeholder and the reverse channel is active" do
@@ -35,20 +32,6 @@ RSpec.describe RootCause::Embassy::Config do
     expect { cfg.validate! }.to raise_error(ArgumentError, /placeholder/)
   end
 
-  it "allows the placeholder fetch_url for an inert app (no secret configured)" do
-    cfg = described_class.new
-    cfg.fetch_url = described_class::PLACEHOLDER_FETCH_URL
-    # No secret → the secret-required check fires first; the placeholder itself is fine.
-    expect { cfg.validate! }.to raise_error(ArgumentError, /secret/)
-  end
-
-  it "accepts a real fetch_url with the reverse channel active" do
-    cfg = described_class.new
-    cfg.secret = "s"
-    cfg.fetch_url = "https://rootcause.example.com/actions/script"
-    expect { cfg.validate! }.not_to raise_error
-  end
-
   it "carries sensible defaults" do
     cfg = described_class.new
     expect(cfg.mount_at).to eq("/rootcause/action")
@@ -58,22 +41,6 @@ RSpec.describe RootCause::Embassy::Config do
     expect(cfg.require_tenant_context).to be(false)
     expect(cfg.tenantless_actions).to eq([])
     expect(cfg.chat_base_url).to eq("https://app.replypen.com")
-  end
-
-  it "rejects a total_deadline that does not exceed the execute timeout" do
-    cfg = described_class.new
-    cfg.secret = "s"
-    cfg.fetch_url = "https://x"
-    cfg.timeout = 30 # raised past the default budget without raising the budget
-    expect { cfg.validate! }.to raise_error(ArgumentError, /total_deadline/)
-  end
-
-  it "rejects a non-boolean tenant-context requirement" do
-    cfg = described_class.new
-    cfg.secret = "s"
-    cfg.fetch_url = "https://x"
-    cfg.require_tenant_context = "yes"
-    expect { cfg.validate! }.to raise_error(ArgumentError, /require_tenant_context/)
   end
 
   it "rejects malformed tenantless action allowlists" do

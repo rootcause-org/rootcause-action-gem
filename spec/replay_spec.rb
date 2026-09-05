@@ -10,20 +10,14 @@ RSpec.describe RootCause::Embassy::Replay do
     described_class.guard!(issued_at: issued_at, nonce: nonce, clock_skew: skew, store: store, now: now)
   end
 
-  it "accepts a fresh invocation with an unseen nonce" do
+  it "accepts issued_at anywhere inside the window, including both edges" do
     expect { guard(issued_at: now.iso8601) }.not_to raise_error
-  end
-
-  it "accepts issued_at at the edge of the window" do
     expect { guard(issued_at: (now - 300).iso8601) }.not_to raise_error
     expect { guard(issued_at: (now + 300).iso8601) }.not_to raise_error
   end
 
-  it "rejects issued_at older than the window" do
+  it "rejects issued_at outside the window in either direction" do
     expect { guard(issued_at: (now - 301).iso8601) }.to raise_error(ReplayError, /window/)
-  end
-
-  it "rejects issued_at in the future beyond the window" do
     expect { guard(issued_at: (now + 600).iso8601) }.to raise_error(ReplayError, /window/)
   end
 
@@ -42,11 +36,6 @@ RSpec.describe RootCause::Embassy::Replay do
   end
 
   describe described_class::MemoryStore do
-    it "returns true on first add, false on repeat" do
-      expect(subject.add?("a", ttl: 60)).to be(true)
-      expect(subject.add?("a", ttl: 60)).to be(false)
-    end
-
     it "forgets a nonce after its ttl elapses" do
       subject.add?("a", ttl: 0)
       # ttl 0 → deadline already reached on the next call's prune

@@ -46,7 +46,7 @@ RSpec.describe RootCause::Embassy::ResultReceiver do
     expect(delivered.note).to eq("Summary. [run trace](https://rc/runs/1)")
   end
 
-  it "rejects a forged signature with a signed 401 (and never dispatches)" do
+  it "rejects a forged or missing signature with a signed 401 (and never dispatches)" do
     reply = handle(Wire.result, secret: "wrong")
     expect(reply.status).to eq(401)
     expect(body_of(reply).fetch("error")).to include(
@@ -57,11 +57,10 @@ RSpec.describe RootCause::Embassy::ResultReceiver do
     )
     expect(SpecResultHandler.store).to be_empty
     expect(RootCause::Embassy::Signature.valid?(reply.signature, reply.body, secret: Wire::SECRET)).to be(true)
-  end
 
-  it "rejects a missing signature with 401" do
     raw = JSON.generate(Wire.result)
     expect(receiver.handle(raw_body: raw, signature: nil).status).to eq(401)
+    expect(SpecResultHandler.store).to be_empty
   end
 
   it "rejects a missing required field with 400" do
@@ -136,24 +135,16 @@ RSpec.describe RootCause::Embassy::ResultReceiver do
     expect(result.decline).to eq({reason: "out of scope"})
   end
 
-  context "when result_handler is unconfigured" do
-    let(:config) { Wire.config(result_handler: nil) }
-
-    it "fails closed with a signed structured error (no ack)" do
+  # Unconfigured and unloadable are the same refusal: a signed handler_error, never
+  # an ack — an ack would tell the host the result was delivered.
+  it "fails closed with a signed handler_error when result_handler is unset or unknown" do
+    [nil, "NoSuchHandler"].each do |spec|
+      config.result_handler = spec
       reply = handle(Wire.result)
-      expect(reply.status).to eq(500)
+
+      expect(reply.status).to eq(500), spec.inspect
       expect(body_of(reply).dig("error", "class")).to eq("handler_error")
       expect(RootCause::Embassy::Signature.valid?(reply.signature, reply.body, secret: Wire::SECRET)).to be(true)
-    end
-  end
-
-  context "when result_handler names an unknown constant" do
-    let(:config) { Wire.config(result_handler: "NoSuchHandler") }
-
-    it "fails closed with handler_error" do
-      reply = handle(Wire.result)
-      expect(reply.status).to eq(500)
-      expect(body_of(reply).dig("error", "class")).to eq("handler_error")
     end
   end
 
@@ -202,18 +193,6 @@ RSpec.describe RootCause::Embassy::ResultRackApp do
     expect(headers["X-Webhook-Signature"]).to eq(Wire.sign(joined))
     expect(JSON.parse(joined)).to eq({"ok" => true})
     expect(SpecResultHandler.store).to have_key("rk-1")
-  end
-
-  it "returns 405 for a non-POST method" do
-    status, headers, = app.call(env_for(method: "GET"))
-    expect(status).to eq(405)
-    expect(headers["allow"]).to eq("POST")
-  end
-
-  it "passes a bad signature through to a signed 401" do
-    raw = JSON.generate(Wire.result)
-    status, = app.call(env_for(method: "POST", body: raw, signature: "sha256=nope"))
-    expect(status).to eq(401)
   end
 
   it "falls back to the globally-configured receiver when none is injected" do

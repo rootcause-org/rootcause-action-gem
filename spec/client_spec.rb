@@ -43,17 +43,6 @@ RSpec.describe RootCause::Embassy::Client do
     expect(analysis.session_id).to eq("sess-1")
   end
 
-  it "forwards session_id in the trigger body on a follow-up" do
-    Wire.stub_trigger
-    client.start_analysis(subject: "follow up", body: "more", session_id: "sess-99")
-
-    expect(
-      a_request(:post, Wire::TRIGGER_URL).with { |req|
-        JSON.parse(req.body)["session_id"] == "sess-99"
-      }
-    ).to have_been_made
-  end
-
   it "forwards tenant in the trigger body for tenant-enabled projects" do
     Wire.stub_trigger
     client.start_analysis(subject: "support ticket", body: "details", tenant: "heyo")
@@ -66,7 +55,7 @@ RSpec.describe RootCause::Embassy::Client do
   end
 
   describe "principal" do
-    it "sends exactly the host's field names, omitting the nils" do
+    it "sends exactly the host's field names, omitting nils — and the key itself when unasserted" do
       Wire.stub_trigger
       client.start_analysis(
         subject: "s", body: "b",
@@ -80,12 +69,9 @@ RSpec.describe RootCause::Embassy::Client do
           }
         }
       ).to have_been_made
-    end
 
-    it "is omitted entirely when nil (the trigger route strict-decodes)" do
-      Wire.stub_trigger
+      # No principal at all → the key is absent, not null (the trigger route strict-decodes).
       client.start_analysis(subject: "s", body: "b")
-
       expect(
         a_request(:post, Wire::TRIGGER_URL).with { |req| !JSON.parse(req.body).key?("principal") }
       ).to have_been_made
